@@ -20,6 +20,30 @@ npm run dev
 
 Öffne http://localhost:3000.
 
+## Screenshots der Weboberfläche
+
+Die folgenden Ansichten zeigen die Weboberfläche nach dem Start mit `npm run dev`. Die Screenshots liegen als versionierbare SVG-Dateien im Repository, damit keine Binärdateien eingecheckt werden müssen.
+
+### Dashboard
+
+![Dashboard mit Hero, Schnellaktionen und Produktionsstatus](docs/screenshots/dashboard.svg)
+
+### News & Videos
+
+![Content-Queue mit Suche, Filter und Artikelaktionen](docs/screenshots/articles.svg)
+
+### Quellenverwaltung
+
+![Quellenverwaltung mit Formular und Quellenkarten](docs/screenshots/sources.svg)
+
+### Automations-Studio
+
+![Automations-Studio mit Pipeline-Start und Produktionsschritten](docs/screenshots/studio.svg)
+
+### Einstellungen & Cron
+
+![Einstellungen mit Diensten und Web-Automatisierung](docs/screenshots/settings.svg)
+
 ## Automatisierung
 
 ```bash
@@ -36,7 +60,7 @@ curl -X POST http://localhost:3000/api/workflow/run \
 
 ## Hinweise
 
-Binärdateien werden nicht eingecheckt. Audio-/Video-Artefakte entstehen zur Laufzeit unter `public/generated/` und sind per `.gitignore` ausgeschlossen.
+Binärdateien werden nicht eingecheckt. Audio-/Video-Artefakte entstehen zur Laufzeit unter `public/generated/` und sind per `.gitignore` ausgeschlossen. Die README-Screenshots sind deshalb bewusst als SVG-Dateien abgelegt.
 
 ## Web-Automatisierung & Cron
 
