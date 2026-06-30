@@ -37,3 +37,13 @@ curl -X POST http://localhost:3000/api/workflow/run \
 ## Hinweise
 
 Binärdateien werden nicht eingecheckt. Audio-/Video-Artefakte entstehen zur Laufzeit unter `public/generated/` und sind per `.gitignore` ausgeschlossen.
+
+## Web-Automatisierung & Cron
+
+Die Automatisierung kann nach dem Start der App vollständig in der Weboberfläche unter **Einstellungen → Web-Automatisierung & Cron** konfiguriert werden:
+
+- Intervall, Crawl-Verhalten, Server-URL und Artikelanzahl pro Lauf
+- Installation oder Entfernung eines Benutzer-Crontabs
+- Optional Installation als Root-Crontab per sudo; das Root-Passwort wird nur für diesen Vorgang verwendet und nicht gespeichert
+
+Der Cron ruft intern weiterhin den Workflow-Endpunkt `/api/workflow/run` auf. Für mehrere Videos pro Lauf kann `maxArticles` im JSON-Payload gesetzt werden.
