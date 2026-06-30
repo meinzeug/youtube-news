@@ -1,0 +1,2 @@
+import { NextRequest, NextResponse } from 'next/server'; import { sql } from '@/lib/db';
+export async function POST(req:NextRequest){ const {articleId}=await req.json(); const url=`https://studio.youtube.com/mock-upload/${articleId}`; sql.prepare("update articles set youtubeUrl=?, status='upload_prepared' where id=?").run(url, articleId); return NextResponse.json({ok:true,url,note:'OAuth/YouTube Data API Hook vorbereitet; echten Upload mit Google OAuth in Einstellungen aktivieren.'}); }
