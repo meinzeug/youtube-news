@@ -1,0 +1,4 @@
+export const dynamic = 'force-dynamic';
+import { sql } from '@/lib/db';
+async function addSource(fd: FormData){'use server'; const {sql}=await import('@/lib/db'); sql.prepare('insert into sources(name,url,intervalMinutes,active) values(?,?,?,1)').run(fd.get('name'),fd.get('url'),Number(fd.get('intervalMinutes')||30));}
+export default function Sources(){const sources=sql.prepare('select * from sources order by id desc').all() as any[]; return <main className="page"><h1>Quellen</h1><form action={addSource}><p>Neue RSS- oder Webseiten-URL anlegen.</p><input name="name" placeholder="Quelle" required/><input name="url" placeholder="https://.../rss" required/><input name="intervalMinutes" defaultValue="30"/><button>Quelle speichern</button></form><div className="grid">{sources.map(s=><div className="card" key={s.id}><h3>{s.name}</h3><p>{s.url}</p><span className="badge">alle {s.intervalMinutes} min</span></div>)}</div></main>}

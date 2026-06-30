@@ -1,0 +1,7 @@
+node_modules
+.next
+data/*.db
+public/generated/*
+.env*.local
+*.mp3
+*.mp4
