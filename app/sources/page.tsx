@@ -3,15 +3,31 @@ export const dynamic = 'force-dynamic';
 import { revalidatePath } from 'next/cache';
 import { sql, type Source } from '@/lib/db';
 import { discoverArticles, isSourceDue, nextCrawlAt } from '@/lib/news';
+import { sourcePresets } from '@/lib/source-presets';
 
 async function addSource(fd: FormData) {
   'use server';
   const { sql } = await import('@/lib/db');
-  sql.prepare('insert into sources(name,url,intervalMinutes,active) values(?,?,?,1)').run(
-    String(fd.get('name') || '').trim(),
-    String(fd.get('url') || '').trim(),
-    Number(fd.get('intervalMinutes') || 30),
+  const name = String(fd.get('name') || '').trim();
+  const url = String(fd.get('url') || '').trim();
+  const interval = Math.max(1, Math.min(1440, Number(fd.get('intervalMinutes') || 30)));
+  if (!name || !url) return;
+  sql.prepare('insert into sources(name,url,intervalMinutes,active) values(?,?,?,1) on conflict(url) do update set name=excluded.name, intervalMinutes=excluded.intervalMinutes, active=1').run(
+    name,
+    url,
+    interval,
   );
+  revalidatePath('/sources');
+}
+
+async function addPresetSource(fd: FormData) {
+  'use server';
+  const { sql } = await import('@/lib/db');
+  const { sourcePresets } = await import('@/lib/source-presets');
+  const presetUrl = String(fd.get('url') || '');
+  const preset = sourcePresets.find((item) => item.url === presetUrl);
+  if (!preset) return;
+  sql.prepare('insert into sources(name,url,intervalMinutes,active) values(?,?,?,1) on conflict(url) do update set name=excluded.name, intervalMinutes=excluded.intervalMinutes, active=1').run(preset.name, preset.url, preset.intervalMinutes);
   revalidatePath('/sources');
 }
 
@@ -117,6 +133,24 @@ export default async function Sources({ searchParams }: { searchParams?: { q?: s
           </div>
         )}
       </form>
+
+      <section className="card preset-panel">
+        <div className="card-header"><div><h2>Quellen-Schnellstart</h2><p className="muted">Füge bewährte Beispielquellen mit einem Klick hinzu oder reaktiviere sie. Ideal für neue Installationen und Crawl-Tests.</p></div><span className="badge muted-badge">{sourcePresets.length} Presets</span></div>
+        <div className="preset-grid">
+          {sourcePresets.map((preset) => {
+            const installed = sources.some((source) => source.url === preset.url);
+            return (
+              <form key={preset.url} action={addPresetSource} className="preset-card">
+                <input type="hidden" name="url" value={preset.url} />
+                <div className="card-header"><strong>{preset.name}</strong><span className="badge">{preset.category}</span></div>
+                <p className="muted">{preset.description}</p>
+                <p className="muted url-text">{preset.url}</p>
+                <button>{installed ? 'Aktualisieren / aktivieren' : 'Quelle hinzufügen'}</button>
+              </form>
+            );
+          })}
+        </div>
+      </section>
 
       <form action={addSource} className="stacked-form">
         <h2>Neue RSS- oder Webseiten-URL anlegen</h2>
