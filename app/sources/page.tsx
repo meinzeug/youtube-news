@@ -64,10 +64,20 @@ export default function Sources({ searchParams }: { searchParams?: { q?: string;
   if (selectedState === 'paused') where.push('active=0');
   const sources = sql.prepare(`select * from sources ${where.length ? `where ${where.join(' and ')}` : ''} order by active desc, id desc`).all(...sourceParams) as Source[];
   const sourceStats = sql.prepare('select sourceId, count(*) c, max(updatedAt) latest from articles group by sourceId').all() as { sourceId: number; c: number; latest: string | null }[];
+  const latestArticles = sql.prepare('select id, sourceId, title, status, updatedAt from articles order by updatedAt desc limit 24').all() as { id: number; sourceId: number; title: string; status: string; updatedAt: string }[];
   const counts = new Map(sourceStats.map((row) => [row.sourceId, row.c]));
   const latestBySource = new Map(sourceStats.map((row) => [row.sourceId, row.latest]));
   const activeCount = sources.filter((source) => source.active).length;
   const dueCount = sources.filter((source) => source.active && isSourceDue(source)).length;
+  const articlesBySource = new Map<number, typeof latestArticles>();
+  latestArticles.forEach((article) => {
+    if (!article.sourceId) return;
+    const list = articlesBySource.get(article.sourceId) || [];
+    if (list.length < 3) {
+      list.push(article);
+      articlesBySource.set(article.sourceId, list);
+    }
+  });
 
   return (
     <main className="page">
@@ -84,6 +94,7 @@ export default function Sources({ searchParams }: { searchParams?: { q?: string;
       </form>
       <form action={addSource} className="stacked-form">
         <h2>Neue RSS- oder Webseiten-URL anlegen</h2>
+        <p className="muted">Tipp: Der Crawler erkennt RSS-Feeds, JSON-LD-NewsArticle-Daten und typische Artikel-Links auf HTML-Startseiten. Du kannst daher z. B. direkt <code>https://www.bild.de</code> testen.</p>
         <div className="form-grid">
           <input name="name" placeholder="Quelle" required />
           <input name="url" placeholder="https://.../rss" type="url" required />
@@ -104,6 +115,14 @@ export default function Sources({ searchParams }: { searchParams?: { q?: string;
               <span className="badge muted-badge">Nächster Crawl: {nextCrawlAt(source) || 'sofort'}</span>
             </div>
             <p className="muted">Zuletzt gecrawlt: {source.lastCrawledAt || 'noch nie'}</p>
+            <div className="source-latest">
+              <strong>Letzte Artikel</strong>
+              {(articlesBySource.get(source.id) || []).length ? (
+                <ul>
+                  {(articlesBySource.get(source.id) || []).map((article) => <li key={article.id}><a href={`/articles?q=${encodeURIComponent(article.title)}`}>{article.title}</a><span className="badge muted-badge">{article.status}</span></li>)}
+                </ul>
+              ) : <p className="muted">Noch keine Artikel. Nutze „Jetzt crawlen“ zum Testen.</p>}
+            </div>
             <details className="article-details"><summary>Quelle bearbeiten</summary><form action={updateSource} className="inline-edit"><input type="hidden" name="id" value={source.id} /><label>Name</label><input name="name" defaultValue={source.name} required /><label>URL</label><input name="url" type="url" defaultValue={source.url} required /><label>Intervall in Minuten</label><input name="intervalMinutes" type="number" min="1" max="1440" defaultValue={source.intervalMinutes} /><button>Änderungen speichern</button></form></details>
             <div className="action-row">
               <form action={crawlSingleSource}><input type="hidden" name="id" value={source.id} /><button>Jetzt crawlen</button></form>
