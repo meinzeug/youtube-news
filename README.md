@@ -2,7 +2,7 @@
 
 Moderne Next.js-16-Webapp zur automatisierten Produktion von YouTube-News-Videos:
 
-- Quellenverwaltung für RSS-Feeds und HTML-Seiten
+- Quellenverwaltung für RSS-Feeds und HTML-Seiten inkl. verbesserter Artikel-Erkennung über JSON-LD, typische News-Links und lesbare Crawl-Vorschau
 - Regelmäßiger Crawl per API oder `npm run worker`
 - OpenRouter-Integration für umformulierte deutsche Sprechertexte
 - ElevenLabs TTS plus lokaler FFmpeg-Fallback ohne externe API
@@ -34,7 +34,7 @@ Die folgenden Ansichten zeigen die Weboberfläche nach dem Start mit `npm run de
 
 ### Quellenverwaltung
 
-![Quellenverwaltung mit Formular und Quellenkarten](docs/screenshots/sources.svg)
+![Quellenverwaltung mit Crawler-Hinweis, Filterleiste und letzten Artikeln pro Quelle](docs/screenshots/sources.svg)
 
 ### Automations-Studio
 
@@ -48,6 +48,12 @@ Die folgenden Ansichten zeigen die Weboberfläche nach dem Start mit `npm run de
 
 ```bash
 npm run worker
+```
+
+Crawler gezielt mit einer Quelle testen, z. B. BILD.de:
+
+```bash
+npm run test:crawl -- https://www.bild.de "BILD Test"
 ```
 
 Oder per Cron/Webhook:
@@ -87,3 +93,7 @@ Unter **Einstellungen → YouTube-Video Produktion** kann das Ausgabevideo ohne 
 - YouTube-Titel-, Beschreibungs-, Tags-, Sprache- und Sichtbarkeitsvorlagen
 
 Alle automatisch erzeugten Medien bleiben Laufzeit-Artefakte unter `public/generated/`; es werden keine Binärdateien eingecheckt.
+
+## Verbesserter Crawler
+
+Der Crawler versucht zuerst RSS/Atom zu lesen. Wenn eine Quelle nur eine HTML-Startseite anbietet, sucht er zusätzlich nach strukturierten `NewsArticle`-/`Article`-Daten in JSON-LD und nach typischen Nachrichtenlinks in Bereichen wie `article`, `main` und Überschriften. In der Quellenverwaltung erscheinen pro Quelle die zuletzt gefundenen Artikel direkt in der Karte, damit Crawl-Ergebnisse ohne Wechsel in die Queue kontrolliert werden können.
