@@ -63,6 +63,8 @@ async function prepareUpload(fd: FormData) {
   const id = Number(fd.get('id'));
   const url = `https://studio.youtube.com/mock-upload/${id}`;
   sql.prepare("update articles set youtubeUrl=?, status='upload_prepared', updatedAt=CURRENT_TIMESTAMP where id=?").run(url, id);
+  const { shareYoutubeVideo } = await import('@/lib/social');
+  await shareYoutubeVideo(id, url);
   revalidatePath('/articles');
 }
 
@@ -87,6 +89,8 @@ async function bulkUpdate(fd: FormData) {
     const update = sql.prepare("update articles set youtubeUrl=?, status='upload_prepared', updatedAt=CURRENT_TIMESTAMP where id=? and videoPath is not null");
     const tx = sql.transaction((articleIds: number[]) => articleIds.forEach((id) => update.run(`https://studio.youtube.com/mock-upload/${id}`, id)));
     tx(ids);
+    const { shareYoutubeVideo } = await import('@/lib/social');
+    for (const id of ids) await shareYoutubeVideo(id, `https://studio.youtube.com/mock-upload/${id}`);
   }
   if (action === 'delete') {
     sql.prepare(`delete from articles where id in (${placeholders})`).run(...ids);
@@ -118,6 +122,15 @@ export default function Articles({ searchParams }: { searchParams?: { status?: s
   const statusRows = sql.prepare('select status, count(*) c from articles group by status').all() as { status: string; c: number }[];
   const sources = sql.prepare('select id,name from sources order by name collate nocase').all() as { id: number; name: string }[];
   const counts = new Map(statusRows.map((row) => [row.status, row.c]));
+  const socialRows = sql.prepare('select articleId, channel, status, createdAt from social_posts order by createdAt desc limit 100').all() as { articleId: number; channel: string; status: string; createdAt: string }[];
+  const socialByArticle = new Map<number, typeof socialRows>();
+  socialRows.forEach((post) => {
+    const list = socialByArticle.get(post.articleId) || [];
+    if (list.length < 5) {
+      list.push(post);
+      socialByArticle.set(post.articleId, list);
+    }
+  });
   const readySelectionCount = rows.filter((article) => article.videoPath).length;
   const totalWords = rows.reduce((sum, article) => sum + countWords(article.rewrittenText || article.rawText), 0);
   const estimatedMinutes = Math.max(1, Math.ceil(totalWords / 155));
@@ -169,7 +182,7 @@ export default function Articles({ searchParams }: { searchParams?: { status?: s
                 <span className={`badge status-${article.status}`}>{statusLabels[article.status] || article.status}</span>
               </div>
               <p className="muted clamp">{article.rewrittenText || article.rawText}</p>
-              <details className="article-details"><summary>Produktionsdetails anzeigen</summary><dl><dt>Erstellt</dt><dd>{article.createdAt}</dd><dt>Quelle</dt><dd>{article.sourceName || 'Nicht zugeordnet'}</dd><dt>Status</dt><dd>{statusLabels[article.status] || article.status}</dd><dt>Rohtext</dt><dd>{article.rawText.length} Zeichen · {countWords(article.rawText)} Wörter</dd><dt>Sprechzeit</dt><dd>ca. {estimateReadingTime(article.rewrittenText || article.rawText)}</dd><dt>Skript</dt><dd>{article.rewrittenText ? `${article.rewrittenText.length} Zeichen` : 'noch nicht erzeugt'}</dd><dt>Assets</dt><dd>{[article.audioPath && 'Audio', article.imagePath && 'Bild', article.videoPath && 'Video'].filter(Boolean).join(', ') || 'keine'}</dd></dl></details>
+              <details className="article-details"><summary>Produktionsdetails anzeigen</summary><dl><dt>Erstellt</dt><dd>{article.createdAt}</dd><dt>Quelle</dt><dd>{article.sourceName || 'Nicht zugeordnet'}</dd><dt>Status</dt><dd>{statusLabels[article.status] || article.status}</dd><dt>Rohtext</dt><dd>{article.rawText.length} Zeichen · {countWords(article.rawText)} Wörter</dd><dt>Sprechzeit</dt><dd>ca. {estimateReadingTime(article.rewrittenText || article.rawText)}</dd><dt>Skript</dt><dd>{article.rewrittenText ? `${article.rewrittenText.length} Zeichen` : 'noch nicht erzeugt'}</dd><dt>Assets</dt><dd>{[article.audioPath && 'Audio', article.imagePath && 'Bild', article.videoPath && 'Video'].filter(Boolean).join(', ') || 'keine'}</dd><dt>Social Posts</dt><dd>{(socialByArticle.get(article.id) || []).length ? (socialByArticle.get(article.id) || []).map((post) => `${post.channel}: ${post.status}`).join(' · ') : 'noch keine Verteilung'}</dd></dl></details>
               <div className="meta-row">
                 <a href={article.url} target="_blank" rel="noreferrer">Quelle öffnen</a>
                 {article.videoPath && <a href={article.videoPath}>Video ansehen</a>}

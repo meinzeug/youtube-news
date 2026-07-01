@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { getSettings } from '@/lib/db';
 import { normalizeVideoSettings } from '@/lib/video-settings';
+import { flattenSocialSettings, normalizeSocialSettings, socialChannels } from '@/lib/social';
 import { buildCronLine, getAutomationSettings, getAutomationStatus, installRootCron, installUserCron, nextRunHint, saveAutomationSettings } from '@/lib/automation';
 
 async function saveSettings(fd: FormData) {
@@ -14,6 +15,13 @@ async function saveVideoSettings(fd: FormData) {
   const { setSettings } = await import('@/lib/db');
   const { normalizeVideoSettings } = await import('@/lib/video-settings');
   setSettings(normalizeVideoSettings(Object.fromEntries(fd)));
+}
+
+async function saveSocialSettings(fd: FormData) {
+  'use server';
+  const { setSettings } = await import('@/lib/db');
+  const { flattenSocialSettings, normalizeSocialSettings } = await import('@/lib/social');
+  setSettings(flattenSocialSettings(normalizeSocialSettings(Object.fromEntries(fd))));
 }
 
 async function saveAutomation(fd: FormData) {
@@ -33,6 +41,7 @@ export default async function Settings() {
   const automation = getAutomationSettings();
   const video = normalizeVideoSettings(s);
   const status = await getAutomationStatus();
+  const social = normalizeSocialSettings(s);
   return (
     <main className="page">
       <h1>Einstellungen</h1>
@@ -151,6 +160,37 @@ export default async function Settings() {
             <div><label>Sprache</label><input name="language" defaultValue={video.language} /></div>
           </div>
           <button>Video-Einstellungen speichern</button>
+        </form>
+
+
+        <form action={saveSocialSettings}>
+          <h2>Social-Media-Verteilung</h2>
+          <p className="muted">Nach einem vorbereiteten oder echten YouTube-Upload kann die App automatisch Text und YouTube-Link an aktivierte Kanäle senden. Ohne Webhook wird der Beitrag als vorbereitet protokolliert.</p>
+          <label className="check"><input name="socialAutoShareEnabled" type="checkbox" defaultChecked={social.socialAutoShareEnabled} /> Nach YouTube-Upload automatisch teilen</label>
+          <label>Standard-Textvorlage</label>
+          <textarea name="socialDefaultText" rows={3} defaultValue={social.socialDefaultText} />
+          <p className="muted">Variablen: <code>{'{{title}}'}</code>, <code>{'{{summary}}'}</code>, <code>{'{{sourceUrl}}'}</code>, <code>{'{{youtubeUrl}}'}</code>, <code>{'{{channel}}'}</code></p>
+          <div className="social-grid">
+            {socialChannels.map((channel) => {
+              const cfg = social.channels[channel.key];
+              return (
+                <details className="social-channel" key={channel.key} open={cfg.enabled}>
+                  <summary><span>{channel.name}</span><span className={cfg.enabled ? 'badge ok' : 'badge muted-badge'}>{cfg.enabled ? 'aktiv' : 'aus'}</span></summary>
+                  <p className="muted">{channel.hint}</p>
+                  <label className="check"><input name={`social_${channel.key}_enabled`} type="checkbox" defaultChecked={cfg.enabled} /> Kanal aktivieren</label>
+                  <label>Webhook/API-Endpunkt</label>
+                  <input name={`social_${channel.key}_webhookUrl`} placeholder={channel.placeholder} defaultValue={cfg.webhookUrl} />
+                  <label>Access Token optional</label>
+                  <input name={`social_${channel.key}_accessToken`} type="password" defaultValue={cfg.accessToken} />
+                  <label>Page-, Account-, Chat- oder Board-ID optional</label>
+                  <input name={`social_${channel.key}_pageId`} defaultValue={cfg.pageId} />
+                  <label>Textvorlage für {channel.name}</label>
+                  <textarea name={`social_${channel.key}_messageTemplate`} rows={3} defaultValue={cfg.messageTemplate} />
+                </details>
+              );
+            })}
+          </div>
+          <button>Social-Media-Einstellungen speichern</button>
         </form>
 
         <form action={applyCron}>
