@@ -6,3 +6,6 @@ body{margin:0;background:#09090b;color:#fafafa;font-family:Inter,system-ui,Arial
 .sources-toolbar{grid-template-columns:minmax(220px,1fr) minmax(160px,.35fr) minmax(110px,.25fr) auto}
 .article-details dd{word-break:break-word}
 @media (max-width:900px){.sources-toolbar{grid-template-columns:1fr}}
+.progress-meter{height:10px;border-radius:999px;background:#27272a;overflow:hidden;margin:10px 0}.progress-meter span{display:block;height:100%;background:linear-gradient(90deg,#dc2626,#22c55e)}
+.inline-edit{padding:0;margin:12px 0 0;background:transparent;border:0;box-shadow:none}.inline-edit button{margin-top:12px}.source-card details form{display:block}
+.card-header{justify-content:space-between}.health-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:12px 0}.health-grid .badge{display:flex;justify-content:center;text-align:center}

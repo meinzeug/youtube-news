@@ -16,7 +16,11 @@ export default function Home() {
     articles: sql.prepare('select count(*) c from articles').get() as { c: number },
     queued: sql.prepare("select count(*) c from articles where status in ('new','scripted')").get() as { c: number },
     ready: sql.prepare("select count(*) c from articles where status='video_ready'").get() as { c: number },
+    uploaded: sql.prepare("select count(*) c from articles where status='upload_prepared'").get() as { c: number },
+    withScript: sql.prepare('select count(*) c from articles where rewrittenText is not null').get() as { c: number },
+    withAudio: sql.prepare('select count(*) c from articles where audioPath is not null').get() as { c: number },
   };
+  const completion = stats.articles.c ? Math.round(((stats.ready.c + stats.uploaded.c) / stats.articles.c) * 100) : 0;
   const statusRows = sql.prepare('select status, count(*) c from articles group by status order by c desc').all() as { status: string; c: number }[];
   const latest = sql.prepare('select id,title,status,updatedAt,videoPath from articles order by updatedAt desc limit 6').all() as {
     id: number;
@@ -44,6 +48,7 @@ export default function Home() {
         <div className="card stat"><span>Quellen</span><h2>{stats.sources.c}</h2><p>{stats.activeSources.c} aktiv</p></div>
         <div className="card stat"><span>Artikel</span><h2>{stats.articles.c}</h2><p>{stats.queued.c} in Warteschlange</p></div>
         <div className="card stat"><span>Videos</span><h2>{stats.ready.c}</h2><p>bereit zum Upload</p></div>
+        <div className="card stat"><span>Fortschritt</span><h2>{completion}%</h2><div className="progress-meter" aria-label={`Produktionsfortschritt ${completion}%`}><span style={{ width: `${completion}%` }} /></div><p>{stats.withScript.c} Skripte · {stats.withAudio.c} Audios · {stats.uploaded.c} Uploads</p></div>
       </div>
 
       <div className="grid two">
