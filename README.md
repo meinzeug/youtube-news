@@ -64,6 +64,19 @@ curl -X POST http://localhost:3000/api/workflow/run \
   -d '{"crawl":true}'
 ```
 
+
+### Crawler-Vorschau und Beispieltest
+
+Die Quellenverwaltung enthält jetzt eine **Crawler-Vorschau testen**-Box. Damit kann eine RSS- oder HTML-URL vor dem Speichern geprüft werden; die Vorschau zeigt erkannte Artikelkandidaten, importiert aber noch nichts. In der Artikel-Queue wird zusätzlich die geschätzte Sprechzeit des aktuell gefilterten Materials angezeigt.
+
+Getestete Crawl-Kommandos:
+
+```bash
+npm run test:crawl -- https://www.bild.de "BILD Test"
+```
+
+Falls die Ausführungsumgebung externe Netzwerkzugriffe blockiert, kann derselbe Crawler mit einem lokalen HTML-Beispiel getestet werden. Der Test importiert Beispielartikel in die SQLite-Datenbank und validiert, dass mindestens ein Artikel vorhanden ist.
+
 ## Hinweise
 
 Binärdateien werden nicht eingecheckt. Audio-/Video-Artefakte entstehen zur Laufzeit unter `public/generated/` und sind per `.gitignore` ausgeschlossen. Die README-Screenshots sind deshalb bewusst als SVG-Dateien abgelegt.

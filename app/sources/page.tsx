@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { revalidatePath } from 'next/cache';
 import { sql, type Source } from '@/lib/db';
-import { isSourceDue, nextCrawlAt } from '@/lib/news';
+import { discoverArticles, isSourceDue, nextCrawlAt } from '@/lib/news';
 
 async function addSource(fd: FormData) {
   'use server';
@@ -51,9 +51,19 @@ async function crawlSingleSource(fd: FormData) {
   revalidatePath('/sources');
 }
 
-export default function Sources({ searchParams }: { searchParams?: { q?: string; state?: string } }) {
+export default async function Sources({ searchParams }: { searchParams?: { q?: string; state?: string; previewUrl?: string } }) {
   const query = (searchParams?.q || '').trim();
   const selectedState = searchParams?.state || 'all';
+  const previewUrl = (searchParams?.previewUrl || '').trim();
+  let preview: { url: string; title: string; rawText: string }[] = [];
+  let previewError = '';
+  if (previewUrl) {
+    try {
+      preview = await discoverArticles(previewUrl, 6);
+    } catch (error) {
+      previewError = error instanceof Error ? error.message : 'Crawl-Vorschau fehlgeschlagen';
+    }
+  }
   const sourceParams: unknown[] = [];
   const where: string[] = [];
   if (query) {
@@ -92,6 +102,22 @@ export default function Sources({ searchParams }: { searchParams?: { q?: string;
         <button>Filtern</button>
         <a className="button-link secondary" href="/sources">Zurücksetzen</a>
       </form>
+      <form className="stacked-form preview-form" action="/sources">
+        <h2>Crawler-Vorschau testen</h2>
+        <p className="muted">Prüfe eine Startseite oder einen Feed, bevor du ihn dauerhaft speicherst. Die Vorschau importiert nichts und zeigt die Top-Kandidaten des Crawlers.</p>
+        <div className="preview-grid">
+          <input name="previewUrl" placeholder="https://www.bild.de" type="url" defaultValue={previewUrl} required />
+          <button>Vorschau laden</button>
+        </div>
+        {previewError && <p className="error">{previewError}</p>}
+        {previewUrl && !previewError && (
+          <div className="crawl-preview">
+            <div className="card-header"><strong>{preview.length} gefundene Artikel</strong><span className="badge muted-badge">Nur Vorschau</span></div>
+            {preview.length ? <ol>{preview.map((item) => <li key={item.url}><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a><p className="muted clamp">{item.rawText || item.url}</p></li>)}</ol> : <p className="muted">Keine Artikel erkannt. Versuche eine RSS-URL oder eine andere Ressortseite.</p>}
+          </div>
+        )}
+      </form>
+
       <form action={addSource} className="stacked-form">
         <h2>Neue RSS- oder Webseiten-URL anlegen</h2>
         <p className="muted">Tipp: Der Crawler erkennt RSS-Feeds, JSON-LD-NewsArticle-Daten und typische Artikel-Links auf HTML-Startseiten. Du kannst daher z. B. direkt <code>https://www.bild.de</code> testen.</p>

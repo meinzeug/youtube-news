@@ -119,10 +119,12 @@ export default function Articles({ searchParams }: { searchParams?: { status?: s
   const sources = sql.prepare('select id,name from sources order by name collate nocase').all() as { id: number; name: string }[];
   const counts = new Map(statusRows.map((row) => [row.status, row.c]));
   const readySelectionCount = rows.filter((article) => article.videoPath).length;
+  const totalWords = rows.reduce((sum, article) => sum + countWords(article.rewrittenText || article.rawText), 0);
+  const estimatedMinutes = Math.max(1, Math.ceil(totalWords / 155));
 
   return (
     <main className="page">
-      <div className="page-title"><div><p className="eyebrow">Content-Queue</p><h1>News & Videos</h1></div><span className="badge">{rows.length} Treffer</span></div>
+      <div className="page-title"><div><p className="eyebrow">Content-Queue</p><h1>News & Videos</h1></div><span className="badge">{rows.length} Treffer · ca. {estimatedMinutes} Min. Material</span></div>
 
       <form className="toolbar enhanced" action="/articles">
         <input name="q" placeholder="Titel, Text oder Quelle suchen" defaultValue={query} />
@@ -167,7 +169,7 @@ export default function Articles({ searchParams }: { searchParams?: { status?: s
                 <span className={`badge status-${article.status}`}>{statusLabels[article.status] || article.status}</span>
               </div>
               <p className="muted clamp">{article.rewrittenText || article.rawText}</p>
-              <details className="article-details"><summary>Produktionsdetails anzeigen</summary><dl><dt>Erstellt</dt><dd>{article.createdAt}</dd><dt>Quelle</dt><dd>{article.sourceName || 'Nicht zugeordnet'}</dd><dt>Status</dt><dd>{statusLabels[article.status] || article.status}</dd><dt>Rohtext</dt><dd>{article.rawText.length} Zeichen</dd><dt>Skript</dt><dd>{article.rewrittenText ? `${article.rewrittenText.length} Zeichen` : 'noch nicht erzeugt'}</dd><dt>Assets</dt><dd>{[article.audioPath && 'Audio', article.imagePath && 'Bild', article.videoPath && 'Video'].filter(Boolean).join(', ') || 'keine'}</dd></dl></details>
+              <details className="article-details"><summary>Produktionsdetails anzeigen</summary><dl><dt>Erstellt</dt><dd>{article.createdAt}</dd><dt>Quelle</dt><dd>{article.sourceName || 'Nicht zugeordnet'}</dd><dt>Status</dt><dd>{statusLabels[article.status] || article.status}</dd><dt>Rohtext</dt><dd>{article.rawText.length} Zeichen · {countWords(article.rawText)} Wörter</dd><dt>Sprechzeit</dt><dd>ca. {estimateReadingTime(article.rewrittenText || article.rawText)}</dd><dt>Skript</dt><dd>{article.rewrittenText ? `${article.rewrittenText.length} Zeichen` : 'noch nicht erzeugt'}</dd><dt>Assets</dt><dd>{[article.audioPath && 'Audio', article.imagePath && 'Bild', article.videoPath && 'Video'].filter(Boolean).join(', ') || 'keine'}</dd></dl></details>
               <div className="meta-row">
                 <a href={article.url} target="_blank" rel="noreferrer">Quelle öffnen</a>
                 {article.videoPath && <a href={article.videoPath}>Video ansehen</a>}
@@ -186,3 +188,6 @@ export default function Articles({ searchParams }: { searchParams?: { status?: s
     </main>
   );
 }
+
+function countWords(value: string) { return value.trim() ? value.trim().split(/\s+/).length : 0; }
+function estimateReadingTime(value: string) { const words = countWords(value); const minutes = Math.max(1, Math.ceil(words / 155)); return `${minutes} Min. bei 155 WPM`; }
