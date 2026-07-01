@@ -8,8 +8,9 @@ Moderne Next.js-16-Webapp zur automatisierten Produktion von YouTube-News-Videos
 - ElevenLabs TTS plus lokaler FFmpeg-Fallback ohne externe API
 - Bild-/Thumbnail-Generierung als scriptbare SVG-Dateien
 - FFmpeg-Rendering zu MP4 mit konfigurierbaren Formaten, Intros, Outros und Bauchbinden
-- Einstellungsseite für OpenRouter, ElevenLabs, YouTube-OAuth und detaillierte Video-Presets
+- Einstellungsseite für OpenRouter, ElevenLabs, YouTube-OAuth, detaillierte Video-Presets und Social-Media-Verteilung
 - YouTube-Upload-Endpunkt als sauberer Integrationspunkt für Google OAuth/YouTube Data API
+- Automatische Verteilung vorbereiteter YouTube-Links an Facebook, Instagram, X/Twitter, LinkedIn, Threads, TikTok, Mastodon, Telegram, Reddit und Pinterest
 
 ## Start
 
@@ -40,9 +41,9 @@ Die folgenden Ansichten zeigen die Weboberfläche nach dem Start mit `npm run de
 
 ![Automations-Studio mit Pipeline-Start und Produktionsschritten](docs/screenshots/studio.svg)
 
-### Einstellungen & Cron
+### Einstellungen, Social Media & Cron
 
-![Einstellungen mit Diensten und Web-Automatisierung](docs/screenshots/settings.svg)
+![Einstellungen mit Diensten, Video-Presets, Social-Media-Verteilung und Web-Automatisierung](docs/screenshots/settings.svg)
 
 ## Automatisierung
 
@@ -75,7 +76,13 @@ Getestete Crawl-Kommandos:
 npm run test:crawl -- https://www.bild.de "BILD Test"
 ```
 
-Falls die Ausführungsumgebung externe Netzwerkzugriffe blockiert, kann derselbe Crawler mit einem lokalen HTML-Beispiel getestet werden. Der Test importiert Beispielartikel in die SQLite-Datenbank und validiert, dass mindestens ein Artikel vorhanden ist.
+In dieser Ausführungsumgebung war der externe Zugriff auf BILD.de per `ENETUNREACH` blockiert. Deshalb wurde derselbe Crawler zusätzlich mit einem lokalen `data:text/html`-Beispiel getestet. Der lokale Test importierte zwei Beispielartikel in die SQLite-Datenbank und validierte, dass Artikel vorhanden sind.
+
+## Social-Media-Verteilung nach YouTube-Upload
+
+Unter **Einstellungen → Social-Media-Verteilung** können mindestens zehn bekannte Kanäle aktiviert werden: Facebook, Instagram, X/Twitter, LinkedIn, Threads, TikTok, Mastodon, Telegram, Reddit und Pinterest. Pro Kanal lassen sich Aktivierung, Webhook/API-Endpunkt, Access Token, Ziel-ID und eine eigene Textvorlage speichern. Nach einem YouTube-Upload bzw. der aktuellen Upload-Vorbereitung wird der YouTube-Link mit Text automatisch verteilt. Ist für einen Kanal noch kein echter API-Endpunkt hinterlegt, protokolliert die App den Post als vorbereitet, sodass die Automatisierung gefahrlos getestet werden kann.
+
+Unterstützte Template-Variablen sind `{{title}}`, `{{summary}}`, `{{sourceUrl}}`, `{{youtubeUrl}}` und `{{channel}}`. Die Artikelansicht zeigt in den Produktionsdetails die letzten Social-Post-Status pro Artikel.
 
 ## Hinweise
 
