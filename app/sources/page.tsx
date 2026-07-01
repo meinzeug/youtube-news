@@ -63,14 +63,17 @@ async function crawlSingleSource(fd: FormData) {
   const { sql } = await import('@/lib/db');
   const { crawlSource } = await import('@/lib/news');
   const source = sql.prepare('select * from sources where id=?').get(Number(fd.get('id'))) as Source | undefined;
-  if (source) await crawlSource(source);
+  if (source) await crawlSource(source).catch(() => undefined);
   revalidatePath('/sources');
 }
 
-export default async function Sources({ searchParams }: { searchParams?: { q?: string; state?: string; previewUrl?: string } }) {
-  const query = (searchParams?.q || '').trim();
-  const selectedState = searchParams?.state || 'all';
-  const previewUrl = (searchParams?.previewUrl || '').trim();
+type SourcesSearchParams = { q?: string; state?: string; previewUrl?: string };
+
+export default async function Sources({ searchParams }: { searchParams: Promise<SourcesSearchParams> }) {
+  const resolvedSearchParams = await searchParams;
+  const query = (resolvedSearchParams.q || '').trim();
+  const selectedState = resolvedSearchParams.state || 'all';
+  const previewUrl = (resolvedSearchParams.previewUrl || '').trim();
   let preview: { url: string; title: string; rawText: string }[] = [];
   let previewError = '';
   if (previewUrl) {
@@ -175,6 +178,7 @@ export default async function Sources({ searchParams }: { searchParams?: { q?: s
               <span className="badge muted-badge">Nächster Crawl: {nextCrawlAt(source) || 'sofort'}</span>
             </div>
             <p className="muted">Zuletzt gecrawlt: {source.lastCrawledAt || 'noch nie'}</p>
+            {source.lastCrawlStatus === 'failed' && source.lastCrawlError ? <p className="error">Letzter Crawl fehlgeschlagen: {source.lastCrawlError}</p> : null}
             <div className="source-latest">
               <strong>Letzte Artikel</strong>
               {(articlesBySource.get(source.id) || []).length ? (

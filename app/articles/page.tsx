@@ -9,6 +9,8 @@ const statusLabels: Record<string, string> = {
   scripted: 'Skript fertig',
   video_ready: 'Video bereit',
   upload_prepared: 'Upload vorbereitet',
+  uploaded: 'Hochgeladen',
+  upload_failed: 'Upload fehlgeschlagen',
 };
 
 const sortOptions: Record<string, string> = {
@@ -45,7 +47,7 @@ type ArticleRow = {
 async function resetArticle(fd: FormData) {
   'use server';
   const { sql } = await import('@/lib/db');
-  sql.prepare("update articles set status='new', rewrittenText=null, imagePrompt=null, updatedAt=CURRENT_TIMESTAMP where id=?").run(Number(fd.get('id')));
+  sql.prepare("update articles set status='new', rewrittenText=null, videoDescription=null, imagePrompt=null, updatedAt=CURRENT_TIMESTAMP where id=?").run(Number(fd.get('id')));
   revalidatePath('/articles');
 }
 
@@ -59,12 +61,9 @@ async function generateVideo(fd: FormData) {
 
 async function prepareUpload(fd: FormData) {
   'use server';
-  const { sql } = await import('@/lib/db');
   const id = Number(fd.get('id'));
-  const url = `https://studio.youtube.com/mock-upload/${id}`;
-  sql.prepare("update articles set youtubeUrl=?, status='upload_prepared', updatedAt=CURRENT_TIMESTAMP where id=?").run(url, id);
-  const { shareYoutubeVideo } = await import('@/lib/social');
-  await shareYoutubeVideo(id, url);
+  const { uploadArticleToYoutube } = await import('@/lib/youtube');
+  await uploadArticleToYoutube(id);
   revalidatePath('/articles');
 }
 
@@ -83,14 +82,12 @@ async function bulkUpdate(fd: FormData) {
   if (!ids.length) return;
   const placeholders = ids.map(() => '?').join(',');
   if (action === 'reset') {
-    sql.prepare(`update articles set status='new', rewrittenText=null, imagePrompt=null, updatedAt=CURRENT_TIMESTAMP where id in (${placeholders})`).run(...ids);
+    sql.prepare(`update articles set status='new', rewrittenText=null, videoDescription=null, imagePrompt=null, updatedAt=CURRENT_TIMESTAMP where id in (${placeholders})`).run(...ids);
   }
   if (action === 'prepare') {
-    const update = sql.prepare("update articles set youtubeUrl=?, status='upload_prepared', updatedAt=CURRENT_TIMESTAMP where id=? and videoPath is not null");
-    const tx = sql.transaction((articleIds: number[]) => articleIds.forEach((id) => update.run(`https://studio.youtube.com/mock-upload/${id}`, id)));
-    tx(ids);
-    const { shareYoutubeVideo } = await import('@/lib/social');
-    for (const id of ids) await shareYoutubeVideo(id, `https://studio.youtube.com/mock-upload/${id}`);
+    const readyRows = sql.prepare(`select id from articles where id in (${placeholders}) and videoPath is not null`).all(...ids) as { id: number }[];
+    const { uploadArticleToYoutube } = await import('@/lib/youtube');
+    for (const row of readyRows) await uploadArticleToYoutube(row.id);
   }
   if (action === 'delete') {
     sql.prepare(`delete from articles where id in (${placeholders})`).run(...ids);
@@ -98,11 +95,14 @@ async function bulkUpdate(fd: FormData) {
   revalidatePath('/articles');
 }
 
-export default function Articles({ searchParams }: { searchParams?: { status?: string; q?: string; source?: string; sort?: string } }) {
-  const selectedStatus = searchParams?.status || 'all';
-  const selectedSource = searchParams?.source || 'all';
-  const selectedSort = sortSql[searchParams?.sort || ''] ? searchParams?.sort || 'updated_desc' : 'updated_desc';
-  const query = (searchParams?.q || '').trim();
+type ArticlesSearchParams = { status?: string; q?: string; source?: string; sort?: string };
+
+export default async function Articles({ searchParams }: { searchParams: Promise<ArticlesSearchParams> }) {
+  const resolvedSearchParams = await searchParams;
+  const selectedStatus = resolvedSearchParams.status || 'all';
+  const selectedSource = resolvedSearchParams.source || 'all';
+  const selectedSort = sortSql[resolvedSearchParams.sort || ''] ? resolvedSearchParams.sort || 'updated_desc' : 'updated_desc';
+  const query = (resolvedSearchParams.q || '').trim();
   const where: string[] = [];
   const params: unknown[] = [];
   if (selectedStatus !== 'all') {
@@ -166,7 +166,7 @@ export default function Articles({ searchParams }: { searchParams?: { status?: s
         <div className="bulk-panel__controls">
           <select name="bulkAction" defaultValue="reset" aria-label="Sammelaktion wählen">
             <option value="reset">Neu verarbeiten</option>
-            <option value="prepare">Upload für Artikel mit Video vorbereiten</option>
+            <option value="prepare">YouTube Upload/Vorbereitung für Artikel mit Video</option>
             <option value="delete">Markierte löschen</option>
           </select>
           <button>Auf markierte anwenden</button>
@@ -190,7 +190,7 @@ export default function Articles({ searchParams }: { searchParams?: { status?: s
               </div>
               <div className="action-row compact">
                 <form action={generateVideo}><input type="hidden" name="id" value={article.id} /><button>{article.videoPath ? 'Video neu erzeugen' : 'Video erzeugen'}</button></form>
-                {article.videoPath && <form action={prepareUpload}><input type="hidden" name="id" value={article.id} /><button>Upload vorbereiten</button></form>}
+                {article.videoPath && <form action={prepareUpload}><input type="hidden" name="id" value={article.id} /><button>YouTube Upload</button></form>}
                 <form action={resetArticle}><input type="hidden" name="id" value={article.id} /><button className="secondary-button">Neu verarbeiten</button></form>
                 <form action={deleteArticle}><input type="hidden" name="id" value={article.id} /><button className="danger-button">Löschen</button></form>
               </div>

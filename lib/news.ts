@@ -11,29 +11,54 @@ const parser = new Parser({
 
 export type CrawledArticle = { url: string; title: string; rawText: string };
 
+const knownFeedFallbacks: Record<string, string[]> = {
+  'kontrafunk.radio': ['https://www.spreaker.com/show/5602119/episodes/feed'],
+  'www.kontrafunk.radio': ['https://www.spreaker.com/show/5602119/episodes/feed'],
+};
+
 export async function crawlSource(source: Source) {
-  const items = await discoverArticles(source.url);
-  const insert = sql.prepare('insert or ignore into articles(sourceId,url,title,rawText,status) values(?,?,?,?,?)');
-  let count = 0;
-  for (const item of items) {
-    if (!item.title || !item.url) continue;
-    const r = insert.run(source.id, item.url, item.title.slice(0, 300), item.rawText || item.title, 'new');
-    count += Number(r.changes);
+  try {
+    const items = await discoverArticles(source.url);
+    const insert = sql.prepare('insert or ignore into articles(sourceId,url,title,rawText,status) values(?,?,?,?,?)');
+    let count = 0;
+    for (const item of items) {
+      if (!item.title || !item.url) continue;
+      const r = insert.run(source.id, item.url, item.title.slice(0, 300), item.rawText || item.title, 'new');
+      count += Number(r.changes);
+    }
+    sql.prepare("update sources set lastCrawledAt=?, lastCrawlStatus='ok', lastCrawlError=null where id=?").run(new Date().toISOString(), source.id);
+    return count;
+  } catch (error) {
+    const message = crawlErrorMessage(error, source.url);
+    sql.prepare("update sources set lastCrawledAt=?, lastCrawlStatus='failed', lastCrawlError=? where id=?")
+      .run(new Date().toISOString(), message, source.id);
+    sql.prepare("insert into jobs(articleId,step,status,log) values(null,'crawl','failed',?)")
+      .run(`${source.name}: ${message}`);
+    throw new Error(message, { cause: error });
   }
-  sql.prepare('update sources set lastCrawledAt=? where id=?').run(new Date().toISOString(), source.id);
-  return count;
 }
 
 export async function discoverArticles(url: string, limit = 10): Promise<CrawledArticle[]> {
-  const feedItems = await parser.parseURL(url).then((feed) => feed.items || []).catch(() => []);
-  if (feedItems.length) {
-    return uniqueArticles(feedItems.slice(0, limit).map((item) => ({
-      url: item.link || url,
-      title: item.title || 'Untitled',
-      rawText: cleanText((item.contentSnippet || item.content || item.summary || '').toString()),
-    })));
+  for (const feedUrl of feedCandidates(url)) {
+    const feedItems = await parser.parseURL(feedUrl).then((feed) => feed.items || []).catch(() => []);
+    if (feedItems.length) {
+      return uniqueArticles(feedItems.slice(0, limit).map((item) => ({
+        url: item.link || feedUrl,
+        title: item.title || 'Unbenannter Beitrag',
+        rawText: cleanText((item.contentSnippet || item.content || item.summary || '').toString()),
+      })));
+    }
   }
   return crawlHtml(url, limit);
+}
+
+function feedCandidates(url: string) {
+  try {
+    const parsed = new URL(url);
+    return [url, ...(knownFeedFallbacks[parsed.hostname] || [])].filter((candidate, index, all) => all.indexOf(candidate) === index);
+  } catch {
+    return [url];
+  }
 }
 
 async function crawlHtml(url: string, limit: number): Promise<CrawledArticle[]> {
@@ -49,6 +74,7 @@ async function crawlHtml(url: string, limit: number): Promise<CrawledArticle[]> 
     'h1 a[href], h2 a[href], h3 a[href]',
     '[data-testid*=headline] a[href]',
     '[class*=headline] a[href]',
+    '[class*=movieItem] a[href][title]',
     'a[href*="/news/"]',
     'a[href*="/politik/"]',
     'a[href*="/unterhaltung/"]',
@@ -95,15 +121,32 @@ function collectJsonLd($: cheerio.CheerioAPI, baseUrl: string): CrawledArticle[]
 
 async function fetchText(url: string) {
   if (url.startsWith('data:text/html,')) return decodeURIComponent(url.slice('data:text/html,'.length));
-  const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; YouTubeNewsStudio/1.0)', accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } });
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(15_000),
+    headers: {
+      'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36',
+      accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'accept-language': 'de-DE,de;q=0.9,en;q=0.7',
+    },
+  });
   if (!response.ok) throw new Error(`Crawl fehlgeschlagen (${response.status}) für ${url}`);
   return response.text();
 }
 
+function crawlErrorMessage(error: unknown, url: string) {
+  if (error instanceof Error && error.message) {
+    const detail = error.message.slice(0, 400);
+    return detail.includes(url) ? detail : `Crawl fehlgeschlagen für ${url}: ${detail}`;
+  }
+  return `Crawl fehlgeschlagen für ${url}`;
+}
+
 function normalizeUrl(href: string, base: string) { return new URL(href, base).toString().split('#')[0]; }
 function extractLinkTitle($: cheerio.CheerioAPI, a: cheerio.Cheerio<any>) {
-  const direct = cleanText(a.text() || a.attr('aria-label') || a.attr('title') || '');
+  const direct = cleanText(a.text());
   if (direct.length >= 12) return direct;
+  const labelled = cleanText(a.attr('aria-label') || a.attr('title') || '');
+  if (labelled.length >= 12) return labelled;
   const imageAlt = cleanText(a.find('img[alt]').first().attr('alt') || '');
   if (imageAlt.length >= 12) return imageAlt;
   return direct;
@@ -137,7 +180,12 @@ export async function crawlDueSources() {
   let total = 0;
   const now = new Date();
   for (const s of sources) {
-    if (isSourceDue(s, now)) total += await crawlSource(s);
+    if (!isSourceDue(s, now)) continue;
+    try {
+      total += await crawlSource(s);
+    } catch {
+      // Der Fehler wurde an der Quelle und im Jobprotokoll gespeichert. Andere Quellen laufen weiter.
+    }
   }
   return total;
 }

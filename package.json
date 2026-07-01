@@ -7,7 +7,8 @@
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push",
     "worker": "tsx scripts/worker.ts",
-    "test:crawl": "tsx scripts/test-crawl.ts"
+    "test:crawl": "tsx scripts/test-crawl.ts",
+    "research:nuoflix": "tsx scripts/research-nuoflix.ts"
   },
   "dependencies": {
     "bcryptjs": "latest",
@@ -18,6 +19,7 @@
     "react": "latest",
     "react-dom": "latest",
     "rss-parser": "latest",
+    "text2wav": "^0.0.14",
     "zod": "latest"
   },
   "devDependencies": {

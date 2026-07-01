@@ -1,20 +1,107 @@
 export const dynamic = 'force-dynamic';
 import { getSettings } from '@/lib/db';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { normalizeVideoSettings } from '@/lib/video-settings';
 import { flattenSocialSettings, normalizeSocialSettings, socialChannels } from '@/lib/social';
 import { buildCronLine, getAutomationSettings, getAutomationStatus, installRootCron, installUserCron, nextRunHint, saveAutomationSettings } from '@/lib/automation';
+import { getYoutubeConnectionStatus, normalizeYoutubeSettings, YOUTUBE_READONLY_SCOPE, YOUTUBE_UPLOAD_SCOPE } from '@/lib/youtube';
 
-async function saveSettings(fd: FormData) {
+async function persistServiceSettings(fd: FormData) {
+  const { getSettings, setSettings } = await import('@/lib/db');
+  const current = getSettings() as Record<string, unknown>;
+  const oldYoutubeClientId = String(current.youtubeClientId || '');
+  const oldYoutubeClientSecret = String(current.youtubeClientSecret || '');
+  const oldYoutubeRedirectUri = String(current.youtubeRedirectUri || '');
+  const nextYoutubeClientId = formText(fd, 'youtubeClientId');
+  const nextYoutubeClientSecret = formSecret(fd, 'youtubeClientSecret', oldYoutubeClientSecret);
+  const nextYoutubeRedirectUri = formText(fd, 'youtubeRedirectUri');
+  const youtubeCredentialsChanged =
+    oldYoutubeClientId !== nextYoutubeClientId ||
+    oldYoutubeClientSecret !== nextYoutubeClientSecret ||
+    oldYoutubeRedirectUri !== nextYoutubeRedirectUri;
+
+  const next: Record<string, unknown> = {
+    openRouterKey: formSecret(fd, 'openRouterKey', String(current.openRouterKey || '')),
+    openRouterTextModel: formText(fd, 'openRouterTextModel') || 'openai/gpt-4.1-mini',
+    elevenLabsKey: formSecret(fd, 'elevenLabsKey', String(current.elevenLabsKey || '')),
+    elevenLabsVoiceId: formText(fd, 'elevenLabsVoiceId'),
+    elevenLabsModelId: formText(fd, 'elevenLabsModelId') || 'eleven_multilingual_v2',
+    localTtsVoice: formText(fd, 'localTtsVoice') || 'de',
+    localTtsSpeed: Math.max(80, Math.min(300, Number(fd.get('localTtsSpeed') || 155))),
+    youtubeClientId: nextYoutubeClientId,
+    youtubeClientSecret: nextYoutubeClientSecret,
+    youtubeRedirectUri: nextYoutubeRedirectUri,
+    youtubeUploadMode: fd.get('youtubeUploadMode') === 'api' ? 'api' : 'prepared',
+    youtubeCategoryId: formText(fd, 'youtubeCategoryId') || '25',
+    youtubeContainsSyntheticMedia: fd.has('youtubeContainsSyntheticMedia'),
+    youtubeSelfDeclaredMadeForKids: fd.has('youtubeSelfDeclaredMadeForKids'),
+  };
+
+  if (youtubeCredentialsChanged) {
+    Object.assign(next, {
+      youtubeAccessToken: '',
+      youtubeRefreshToken: '',
+      youtubeTokenExpiresAt: '',
+      youtubeGrantedScopes: '',
+      youtubeChannelId: '',
+      youtubeChannelTitle: '',
+      youtubeChannelUrl: '',
+      youtubeOAuthState: '',
+      youtubeConnectedAt: '',
+    });
+  }
+
+  setSettings(next);
+}
+
+async function saveServiceSettings(fd: FormData) {
   'use server';
+  await persistServiceSettings(fd);
+  revalidatePath('/settings');
+}
+
+async function connectYoutube(fd: FormData) {
+  'use server';
+  await persistServiceSettings(fd);
+  revalidatePath('/settings');
+  redirect('/api/youtube/oauth/start');
+}
+
+async function refreshYoutubeConnection(fd: FormData) {
+  'use server';
+  await persistServiceSettings(fd);
   const { setSettings } = await import('@/lib/db');
-  setSettings(Object.fromEntries(fd));
+  const { verifyYoutubeConnection } = await import('@/lib/youtube');
+  try {
+    await verifyYoutubeConnection();
+  } catch (error) {
+    setSettings({ youtubeLastConnectionError: error instanceof Error ? error.message : 'YouTube-Verbindung konnte nicht geprüft werden.' });
+  }
+  revalidatePath('/settings');
+}
+
+async function disconnectYoutubeAction() {
+  'use server';
+  const { disconnectYoutube } = await import('@/lib/youtube');
+  disconnectYoutube();
+  revalidatePath('/settings');
 }
 
 async function saveVideoSettings(fd: FormData) {
   'use server';
   const { setSettings } = await import('@/lib/db');
   const { normalizeVideoSettings } = await import('@/lib/video-settings');
-  setSettings(normalizeVideoSettings(Object.fromEntries(fd)));
+  const input = Object.fromEntries(fd);
+  setSettings(normalizeVideoSettings({
+    ...input,
+    lowerThirdEnabled: fd.has('lowerThirdEnabled'),
+    useSourceImages: fd.has('useSourceImages'),
+    aiEnhancementEnabled: fd.has('aiEnhancementEnabled'),
+    aiIncludeHook: fd.has('aiIncludeHook'),
+    aiIncludeChapters: fd.has('aiIncludeChapters'),
+  }));
+  revalidatePath('/settings');
 }
 
 async function saveSocialSettings(fd: FormData) {
@@ -22,11 +109,13 @@ async function saveSocialSettings(fd: FormData) {
   const { setSettings } = await import('@/lib/db');
   const { flattenSocialSettings, normalizeSocialSettings } = await import('@/lib/social');
   setSettings(flattenSocialSettings(normalizeSocialSettings(Object.fromEntries(fd))));
+  revalidatePath('/settings');
 }
 
 async function saveAutomation(fd: FormData) {
   'use server';
   saveAutomationSettings(Object.fromEntries(fd));
+  revalidatePath('/settings');
 }
 
 async function applyCron(fd: FormData) {
@@ -34,6 +123,17 @@ async function applyCron(fd: FormData) {
   saveAutomationSettings(Object.fromEntries(fd));
   if (fd.get('scope') === 'root') await installRootCron(String(fd.get('rootPassword') || ''));
   else await installUserCron();
+  revalidatePath('/settings');
+}
+
+function formText(fd: FormData, key: string) {
+  const value = fd.get(key);
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function formSecret(fd: FormData, key: string, existing: string) {
+  const value = formText(fd, key);
+  return value || existing;
 }
 
 export default async function Settings() {
@@ -42,27 +142,165 @@ export default async function Settings() {
   const video = normalizeVideoSettings(s);
   const status = await getAutomationStatus();
   const social = normalizeSocialSettings(s);
+  const youtube = normalizeYoutubeSettings(s);
+  const youtubeStatus = getYoutubeConnectionStatus(s);
+  const suggestedYoutubeRedirectUri = youtube.redirectUri || `${automation.baseUrl.replace(/\/$/, '')}/api/youtube/oauth/callback`;
   return (
     <main className="page">
       <h1>Einstellungen</h1>
       <div className="grid two">
-        <form id="settings" action={saveSettings}>
+        <form id="settings" action={saveServiceSettings}>
           <h2>Dienste</h2>
-          <label>OpenRouter API Key</label>
-          <input name="openRouterKey" type="password" defaultValue={s.openRouterKey || ''} />
-          <label>Textmodell</label>
-          <input name="openRouterTextModel" list="openrouter-models" defaultValue={s.openRouterTextModel || 'openai/gpt-4.1-mini'} />
-          <datalist id="openrouter-models">
-            {video.aiSuggestedModels.split(',').map((model) => <option key={model.trim()} value={model.trim()} />)}
-          </datalist>
-          <p className="muted">Tipp: OpenRouter bietet eine OpenAI-kompatible Chat-Completions-API mit Modell-Routing; Modelle können über die OpenRouter Models API aktuell gehalten werden.</p>
-          <label>ElevenLabs API Key</label>
-          <input name="elevenLabsKey" type="password" defaultValue={s.elevenLabsKey || ''} />
-          <label>ElevenLabs Voice ID</label>
-          <input name="elevenLabsVoiceId" defaultValue={s.elevenLabsVoiceId || ''} />
-          <label>YouTube OAuth Client ID</label>
-          <input name="youtubeClientId" defaultValue={s.youtubeClientId || ''} />
-          <button>Speichern</button>
+          <p className="muted">API-Zugänge für Text, Sprache und YouTube-Upload. Secret-Felder leer lassen, um gespeicherte Werte beizubehalten.</p>
+          <div className="service-tabs">
+            <input id="service-openrouter" type="radio" name="serviceTab" defaultChecked />
+            <input id="service-elevenlabs" type="radio" name="serviceTab" />
+            <input id="service-youtube" type="radio" name="serviceTab" />
+
+            <div className="service-tab-list" aria-label="Dienste">
+              <label className="service-tab-label" htmlFor="service-openrouter">OpenRouter</label>
+              <label className="service-tab-label" htmlFor="service-elevenlabs">ElevenLabs</label>
+              <label className="service-tab-label" htmlFor="service-youtube">YouTube</label>
+            </div>
+
+            <section className="service-panel openrouter-panel">
+              <h3>OpenRouter</h3>
+              <label>OpenRouter API Key</label>
+              <input name="openRouterKey" type="password" placeholder={s.openRouterKey ? 'gespeichert – leer lassen zum Behalten' : ''} autoComplete="off" />
+              <label>Textmodell</label>
+              <input name="openRouterTextModel" list="openrouter-models" defaultValue={s.openRouterTextModel || 'openai/gpt-4.1-mini'} />
+              <datalist id="openrouter-models">
+                {video.aiSuggestedModels.split(',').map((model) => <option key={model.trim()} value={model.trim()} />)}
+              </datalist>
+              <p className="muted">OpenRouter wird für KI-Regie, Skript, Titel, Beschreibung, Kapitel und Thumbnail-Prompt verwendet.</p>
+            </section>
+
+            <section className="service-panel elevenlabs-panel">
+              <h3>ElevenLabs</h3>
+              <label>ElevenLabs API Key</label>
+              <input name="elevenLabsKey" type="password" placeholder={s.elevenLabsKey ? 'gespeichert – leer lassen zum Behalten' : ''} autoComplete="off" />
+              <label>Voice ID</label>
+              <input name="elevenLabsVoiceId" placeholder="z.B. 21m00Tcm4TlvDq8ikWAM" defaultValue={s.elevenLabsVoiceId || ''} />
+              <label>Model ID</label>
+              <input name="elevenLabsModelId" defaultValue={s.elevenLabsModelId || 'eleven_multilingual_v2'} />
+              <h4>Lokale Sprachausgabe</h4>
+              <div className="form-split">
+                <div><label>Lokale Stimme</label><input name="localTtsVoice" defaultValue={s.localTtsVoice || 'de'} /></div>
+                <div><label>Sprechtempo (Wörter/Minute)</label><input name="localTtsSpeed" type="number" min="80" max="300" defaultValue={s.localTtsSpeed || 155} /></div>
+              </div>
+              <p className="muted">Ohne ElevenLabs-Key oder bei einem API-Fehler erzeugt die mitgelieferte eSpeak-NG-Engine lokal echten deutschen Sprechertext. Es wird kein Cloud-Dienst benötigt.</p>
+            </section>
+
+            <section className="service-panel youtube-panel">
+              <div className="service-panel-header">
+                <h3>YouTube</h3>
+                <a className="help-icon" href="#youtube-oauth-help" aria-label="YouTube-Verbindungsanleitung öffnen">?</a>
+              </div>
+              <div id="youtube-oauth-help" className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="youtube-oauth-help-title">
+                <a className="modal-backdrop" href="#settings" aria-label="Anleitung schließen" />
+                <div className="modal-card">
+                  <div className="modal-header">
+                    <div>
+                      <p className="eyebrow">YouTube OAuth Setup</p>
+                      <h2 id="youtube-oauth-help-title">Schritt-für-Schritt Anleitung</h2>
+                    </div>
+                    <a className="modal-close" href="#settings" aria-label="Anleitung schließen">×</a>
+                  </div>
+                  <ol className="step-list">
+                    <li>
+                      <strong>Google-Cloud-Projekt öffnen oder erstellen.</strong>
+                      <p>Öffne die <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">Google Cloud Console</a>, wähle oben links das richtige Projekt oder erstelle ein neues Projekt über <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">Neues Projekt</a>.</p>
+                    </li>
+                    <li>
+                      <strong>YouTube Data API v3 aktivieren.</strong>
+                      <p>Öffne direkt die <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noreferrer">YouTube Data API v3</a> und klicke auf <em>Enable/Aktivieren</em>.</p>
+                    </li>
+                    <li>
+                      <strong>OAuth-Zustimmungsbildschirm konfigurieren.</strong>
+                      <p>Gehe zu <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noreferrer">APIs & Services → OAuth consent screen</a>. Für ein privates Gmail-Konto normalerweise <em>External</em> wählen, App-Name und Support-Mail eintragen. Solange die App im Testmodus ist, unter <em>Test users</em> genau das Google-Konto hinzufügen, dessen YouTube-Kanal verbunden werden soll.</p>
+                    </li>
+                    <li>
+                      <strong>Scopes eintragen.</strong>
+                      <p>Füge in der OAuth-/Data-Access-Konfiguration diese Scopes hinzu:</p>
+                      <code className="copy-value">{YOUTUBE_UPLOAD_SCOPE}</code>
+                      <code className="copy-value">{YOUTUBE_READONLY_SCOPE}</code>
+                    </li>
+                    <li>
+                      <strong>OAuth Client erstellen.</strong>
+                      <p>Öffne <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">APIs & Services → Credentials</a>, klicke <em>Create credentials → OAuth client ID</em> und wähle als Anwendungstyp <em>Web application</em>.</p>
+                    </li>
+                    <li>
+                      <strong>Redirect URI exakt hinterlegen.</strong>
+                      <p>Unter <em>Authorized redirect URIs</em> exakt diese URI eintragen:</p>
+                      <code className="copy-value">{suggestedYoutubeRedirectUri}</code>
+                      <p>Wichtig: Protokoll, Domain/IP, Port und Pfad müssen exakt gleich sein. Ein häufiger Fehler ist <code>redirect_uri_mismatch</code>.</p>
+                    </li>
+                    <li>
+                      <strong>Client ID und Client Secret kopieren.</strong>
+                      <p>Nach dem Erstellen die Werte aus Google in die Felder <em>YouTube OAuth Client ID</em> und <em>YouTube OAuth Client Secret</em> in dieser App eintragen.</p>
+                    </li>
+                    <li>
+                      <strong>In dieser App verbinden.</strong>
+                      <p>Upload-Modus auf <em>Echt per YouTube Data API hochladen</em> stellen, dann <em>Speichern und YouTube verbinden</em> klicken. Google fragt nach Zustimmung und leitet danach zurück in diese App.</p>
+                    </li>
+                    <li>
+                      <strong>Verbindung prüfen.</strong>
+                      <p>Wenn hier danach „YouTube verbunden“ und der Kanalname angezeigt wird, ist die Verbindung aktiv. Bei Fehlern zuerst Redirect URI, Testnutzer, aktivierte API und Scopes prüfen.</p>
+                    </li>
+                  </ol>
+                  <p className="muted">Offizielle Referenzen: <a href="https://developers.google.com/identity/protocols/oauth2/web-server" target="_blank" rel="noreferrer">Google OAuth Web Server Flow</a> und <a href="https://developers.google.com/youtube/v3/guides/uploading_a_video" target="_blank" rel="noreferrer">YouTube Upload Guide</a>.</p>
+                </div>
+              </div>
+              <div className="service-status">
+                <span className={youtubeStatus.connected ? 'badge ok' : 'badge muted-badge'}>{youtubeStatus.connected ? 'YouTube verbunden' : 'YouTube nicht verbunden'}</span>
+                <span className={youtubeStatus.canUpload ? 'badge ok' : 'badge muted-badge'}>{youtubeStatus.canUpload ? 'API-Upload aktiv' : 'Upload nur vorbereitet'}</span>
+              </div>
+              {youtubeStatus.channelId ? (
+                <p className="muted">Kanal: <a href={youtubeStatus.channelUrl} target="_blank" rel="noreferrer">{youtubeStatus.channelTitle || youtubeStatus.channelId}</a></p>
+              ) : null}
+              {youtubeStatus.lastConnectionError ? <p className="error">YouTube-Verbindung: {youtubeStatus.lastConnectionError}</p> : null}
+              {youtubeStatus.lastUploadError ? <p className="error">Letzter Upload: {youtubeStatus.lastUploadError}</p> : null}
+              <label>YouTube OAuth Client ID</label>
+              <input name="youtubeClientId" defaultValue={youtube.clientId} autoComplete="off" />
+              <label>YouTube OAuth Client Secret</label>
+              <input name="youtubeClientSecret" type="password" placeholder={youtube.clientSecret ? 'gespeichert – leer lassen zum Behalten' : ''} autoComplete="off" />
+              <label>Authorized Redirect URI</label>
+              <input name="youtubeRedirectUri" defaultValue={suggestedYoutubeRedirectUri} />
+              <p className="muted">Diese URI muss exakt in Google Cloud beim OAuth-Web-Client hinterlegt sein.</p>
+              <div className="form-split">
+                <div>
+                  <label>Upload-Modus</label>
+                  <select name="youtubeUploadMode" defaultValue={youtube.uploadMode}>
+                    <option value="prepared">Nur Upload vorbereiten</option>
+                    <option value="api">Echt per YouTube Data API hochladen</option>
+                  </select>
+                </div>
+                <div>
+                  <label>YouTube Kategorie-ID</label>
+                  <input name="youtubeCategoryId" defaultValue={youtube.categoryId} />
+                </div>
+              </div>
+              <label className="check"><input name="youtubeContainsSyntheticMedia" type="checkbox" defaultChecked={youtube.containsSyntheticMedia} /> KI/synthetische Inhalte bei YouTube deklarieren</label>
+              <label className="check"><input name="youtubeSelfDeclaredMadeForKids" type="checkbox" defaultChecked={youtube.selfDeclaredMadeForKids} /> Video als „für Kinder“ deklarieren</label>
+              <div className="oauth-checklist">
+                <strong>Für die Verbindung nötig</strong>
+                <ul>
+                  <li>YouTube Data API v3 im Google-Cloud-Projekt aktivieren.</li>
+                  <li>OAuth Consent Screen konfigurieren und Testnutzer hinzufügen, solange die App nicht veröffentlicht ist.</li>
+                  <li>OAuth Client vom Typ „Web application“ mit obiger Redirect URI erstellen.</li>
+                  <li>Scopes: <code>{YOUTUBE_UPLOAD_SCOPE}</code> und <code>{YOUTUBE_READONLY_SCOPE}</code>.</li>
+                </ul>
+              </div>
+              {youtubeStatus.tokenExpiresAt ? <p className="muted">Access Token gültig bis: {youtubeStatus.tokenExpiresAt}</p> : null}
+              {youtubeStatus.lastUploadAt ? <p className="muted">Letzter erfolgreicher Upload: {youtubeStatus.lastUploadAt} · Video-ID {youtubeStatus.lastUploadId}</p> : null}
+              <div className="service-actions">
+                <button formAction={connectYoutube}>Speichern und YouTube verbinden</button>
+                <button className="secondary-button" formAction={refreshYoutubeConnection}>Verbindung prüfen</button>
+                <button className="danger-button" formAction={disconnectYoutubeAction}>YouTube trennen</button>
+              </div>
+            </section>
+          </div>
+          <button>Dienste speichern</button>
         </form>
 
 
@@ -92,7 +330,7 @@ export default async function Settings() {
           </div>
           <label>Intro</label>
           <select name="introMode" defaultValue={video.introMode}>
-            <option value="generated">Online per SVG/FFmpeg erzeugen</option>
+            <option value="generated">Lokal per SVG/FFmpeg erzeugen</option>
             <option value="asset">Eigenes Video/Bild aus public/ verwenden</option>
             <option value="none">Kein Intro</option>
           </select>
@@ -104,7 +342,7 @@ export default async function Settings() {
           <input name="introAssetPath" placeholder="/uploads/intro.mp4 oder /generated/mein-intro.svg" defaultValue={video.introAssetPath} />
           <label>Outro</label>
           <select name="outroMode" defaultValue={video.outroMode}>
-            <option value="generated">Online per SVG/FFmpeg erzeugen</option>
+            <option value="generated">Lokal per SVG/FFmpeg erzeugen</option>
             <option value="asset">Eigenes Video/Bild aus public/ verwenden</option>
             <option value="none">Kein Outro</option>
           </select>
@@ -115,6 +353,8 @@ export default async function Settings() {
           <label>Outro-Dateipfad optional</label>
           <input name="outroAssetPath" placeholder="/uploads/outro.mp4 oder /generated/mein-outro.svg" defaultValue={video.outroAssetPath} />
           <label className="check"><input name="lowerThirdEnabled" type="checkbox" defaultChecked={video.lowerThirdEnabled} /> Bauchbinde im Hauptvideo anzeigen</label>
+          <label className="check"><input name="useSourceImages" type="checkbox" defaultChecked={video.useSourceImages} /> Artikelbild der Quelle lokal in die Videoszenen übernehmen</label>
+          <p className="muted">Ist kein Artikelbild erreichbar, erzeugt die Pipeline automatisch lokale, lesbare Nachrichtengrafiken.</p>
           <label>Bauchbinden-Text</label>
           <input name="lowerThirdText" defaultValue={video.lowerThirdText} />
           <label>Thumbnail-Stil</label>
@@ -127,7 +367,7 @@ export default async function Settings() {
           </select>
           <div className="ai-panel">
             <h3>KI-Regie mit OpenRouter</h3>
-            <p className="muted">Erzeugt per LLM ein strukturiertes Videokonzept mit Skript, Thumbnail-Prompt, YouTube-Titel, Beschreibung, Kapiteln und Sicherheitsnotizen.</p>
+            <p className="muted">Erzeugt eine eigenständige redaktionelle Fassung statt einer Kopie des Quelltexts. Die Quelle wird transparent genannt und der Originalbeitrag in der Videobeschreibung immer verlinkt.</p>
             <label className="check"><input name="aiEnhancementEnabled" type="checkbox" defaultChecked={video.aiEnhancementEnabled} /> KI-Video-Regie aktivieren</label>
             <div className="form-split">
               <div><label>Skriptmodus</label><select name="aiScriptMode" defaultValue={video.aiScriptMode}><option value="balanced">Ausgewogen</option><option value="shorts">Shorts</option><option value="deepDive">Deep Dive</option><option value="breaking">Breaking News</option></select></div>
@@ -153,6 +393,7 @@ export default async function Settings() {
           <input name="youtubeTitleTemplate" defaultValue={video.youtubeTitleTemplate} />
           <label>Beschreibung-Vorlage</label>
           <textarea name="youtubeDescriptionTemplate" rows={4} defaultValue={video.youtubeDescriptionTemplate} />
+          <p className="muted">Der vollständige Originallink und eine faire Quellenempfehlung werden unabhängig von dieser Vorlage automatisch angehängt.</p>
           <label>Tags</label>
           <input name="youtubeTags" defaultValue={video.youtubeTags} />
           <div className="form-split">

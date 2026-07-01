@@ -10,8 +10,13 @@ CREATE TABLE IF NOT EXISTS sources(id INTEGER PRIMARY KEY AUTOINCREMENT, name TE
 CREATE TABLE IF NOT EXISTS articles(id INTEGER PRIMARY KEY AUTOINCREMENT, sourceId INTEGER, url TEXT UNIQUE, title TEXT NOT NULL, rawText TEXT NOT NULL, rewrittenText TEXT, imagePrompt TEXT, audioPath TEXT, imagePath TEXT, videoPath TEXT, youtubeUrl TEXT, status TEXT DEFAULT 'new', createdAt TEXT DEFAULT CURRENT_TIMESTAMP, updatedAt TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY AUTOINCREMENT, articleId INTEGER, step TEXT NOT NULL, status TEXT NOT NULL, log TEXT, createdAt TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS social_posts(id INTEGER PRIMARY KEY AUTOINCREMENT, articleId INTEGER, channel TEXT NOT NULL, status TEXT NOT NULL, message TEXT NOT NULL, response TEXT, createdAt TEXT DEFAULT CURRENT_TIMESTAMP);`);
-export type Source = { id:number; name:string; url:string; intervalMinutes:number; active:number; lastCrawledAt:string|null };
-export type Article = { id:number; sourceId:number|null; url:string; title:string; rawText:string; rewrittenText:string|null; imagePrompt:string|null; audioPath:string|null; imagePath:string|null; videoPath:string|null; youtubeUrl:string|null; status:string; createdAt:string; updatedAt:string };
+const sourceColumns = new Set((db.prepare('pragma table_info(sources)').all() as { name: string }[]).map((column) => column.name));
+if (!sourceColumns.has('lastCrawlError')) db.exec('ALTER TABLE sources ADD COLUMN lastCrawlError TEXT');
+if (!sourceColumns.has('lastCrawlStatus')) db.exec('ALTER TABLE sources ADD COLUMN lastCrawlStatus TEXT');
+const articleColumns = new Set((db.prepare('pragma table_info(articles)').all() as { name: string }[]).map((column) => column.name));
+if (!articleColumns.has('videoDescription')) db.exec('ALTER TABLE articles ADD COLUMN videoDescription TEXT');
+export type Source = { id:number; name:string; url:string; intervalMinutes:number; active:number; lastCrawledAt:string|null; lastCrawlError:string|null; lastCrawlStatus:string|null };
+export type Article = { id:number; sourceId:number|null; url:string; title:string; rawText:string; rewrittenText:string|null; videoDescription:string|null; imagePrompt:string|null; audioPath:string|null; imagePath:string|null; videoPath:string|null; youtubeUrl:string|null; status:string; createdAt:string; updatedAt:string };
 export const sql = db;
 export function getSettings(){ return Object.fromEntries(db.prepare('select key,value from settings').all().map((r:any)=>[r.key, JSON.parse(r.value)])); }
 export function setSettings(input: Record<string, unknown>){ const stmt=db.prepare('insert into settings(key,value) values(?,?) on conflict(key) do update set value=excluded.value'); const tx=db.transaction((entries:[string,unknown][])=>entries.forEach(([k,v])=>stmt.run(k,JSON.stringify(v)))); tx(Object.entries(input)); }

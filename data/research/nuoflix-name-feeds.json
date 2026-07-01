@@ -1,0 +1,84 @@
+{
+  "generatedAt": "2026-07-01T21:41:00.105Z",
+  "scope": "Verifizierte eigene Webseiten und Feeds zu wiederkehrenden oder redaktionell relevanten Namen aus 350 analysierten NuoFlix-Beiträgen",
+  "entries": [
+    {
+      "name": "Frank Höfer",
+      "website": "https://nuoflix.de/",
+      "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCPOmsF_XgQohcJhdj58zshg",
+      "status": "verified"
+    },
+    {
+      "name": "Frank Stoner",
+      "website": "https://nuoflix.de/stoner-frank-und-frei",
+      "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCPOmsF_XgQohcJhdj58zshg",
+      "status": "verified-via-nuoflix"
+    },
+    {
+      "name": "Robert Stein",
+      "website": "https://nuoflix.de/robert",
+      "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCPOmsF_XgQohcJhdj58zshg",
+      "status": "verified-via-nuoflix"
+    },
+    {
+      "name": "Thomas Röper",
+      "website": "https://anti-spiegel.ru/",
+      "feed": "https://anti-spiegel.ru/feed/",
+      "status": "verified"
+    },
+    {
+      "name": "Markus Fiedler",
+      "website": "https://wikihausen.de/",
+      "feed": "https://wikihausen.de/feed/",
+      "status": "verified"
+    },
+    {
+      "name": "Sabine Stebel",
+      "website": "https://drbine.substack.com/",
+      "feed": "https://drbine.substack.com/feed",
+      "status": "verified"
+    },
+    {
+      "name": "Uwe Boll",
+      "website": "https://uwebollraw.com/",
+      "feed": "https://anchor.fm/s/6c4d6144/podcast/rss",
+      "status": "verified"
+    },
+    {
+      "name": "Max Otte",
+      "website": "https://max-otte.de/",
+      "feed": "https://max-otte.de/feed/",
+      "status": "verified"
+    },
+    {
+      "name": "Wolfgang Effenberger",
+      "website": "https://www.wolfgangeffenberger.com/index.php",
+      "feed": null,
+      "status": "website-verified-no-feed"
+    },
+    {
+      "name": "Patrik Baab",
+      "website": "https://www.patrikbaab.de/",
+      "feed": null,
+      "status": "website-verified-no-feed"
+    },
+    {
+      "name": "Armin Risi",
+      "website": "https://armin-risi.ch/",
+      "feed": null,
+      "status": "website-verified-no-feed"
+    },
+    {
+      "name": "Oliver Janich",
+      "website": null,
+      "feed": null,
+      "status": "former-domain-redirects-to-unrelated-site-do-not-import"
+    },
+    {
+      "name": "Wilhelm Domke-Schulz",
+      "website": "https://domke-schulz-film.de/",
+      "feed": null,
+      "status": "website-currently-unreachable"
+    }
+  ]
+}

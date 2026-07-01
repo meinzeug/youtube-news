@@ -1,6 +1,8 @@
 node_modules
 .next
 data/*
+!data/research/
+!data/research/**
 public/generated/*
 .env*.local
 *.mp3

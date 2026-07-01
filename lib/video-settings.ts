@@ -18,6 +18,7 @@ export type VideoSettings = {
   outroAssetPath: string;
   lowerThirdEnabled: boolean;
   lowerThirdText: string;
+  useSourceImages: boolean;
   thumbnailStyle: 'editorial' | 'breaking' | 'minimal' | 'documentary' | 'shorts';
   callToAction: string;
   aiEnhancementEnabled: boolean;
@@ -42,7 +43,7 @@ export const latestOpenRouterModelSuggestions = [
 
 export const defaultVideoSettings: VideoSettings = {
   youtubeTitleTemplate: '{{title}}',
-  youtubeDescriptionTemplate: '{{summary}}\n\nKapitel:\n{{chapters}}\n\nQuelle: {{sourceUrl}}',
+  youtubeDescriptionTemplate: '{{summary}}\n\nKapitel:\n{{chapters}}',
   youtubeTags: 'news, nachrichten, politik, wirtschaft, aktuell',
   privacyStatus: 'private',
   language: 'de',
@@ -60,6 +61,7 @@ export const defaultVideoSettings: VideoSettings = {
   outroAssetPath: '',
   lowerThirdEnabled: true,
   lowerThirdText: 'Aktuelle Nachrichten',
+  useSourceImages: true,
   thumbnailStyle: 'editorial',
   callToAction: 'Wenn dir dieses Update geholfen hat, abonniere den Kanal.',
   aiEnhancementEnabled: true,
@@ -69,7 +71,7 @@ export const defaultVideoSettings: VideoSettings = {
   aiTargetDuration: 60,
   aiIncludeChapters: true,
   aiIncludeHook: true,
-  aiFactCheckPrompt: 'Markiere unsichere Angaben als laut Quelle/berichtete Angaben und erfinde keine Zahlen, Namen oder Zitate.',
+  aiFactCheckPrompt: 'Markiere unsichere Angaben als laut Quelle/berichtete Angaben und erfinde keine Zahlen, Namen oder Zitate. Formuliere eigenständig, nenne das Ursprungsmedium fair und verweise für Details auf den verlinkten Originalbeitrag.',
   aiImagePromptStyle: 'realistische Editorial-Illustration, starke Headline-Fläche, keine Logos, keine Gesichter realer Personen ohne sichere Quelle',
   aiSuggestedModels: latestOpenRouterModelSuggestions.join(', '),
 };
@@ -100,6 +102,7 @@ export function normalizeVideoSettings(input: Record<string, unknown> = {}): Vid
     outroAssetPath: String(input.outroAssetPath || ''),
     lowerThirdEnabled: bool(input.lowerThirdEnabled, d.lowerThirdEnabled),
     lowerThirdText: String(input.lowerThirdText || d.lowerThirdText),
+    useSourceImages: bool(input.useSourceImages, d.useSourceImages),
     thumbnailStyle: pick(input.thumbnailStyle, ['editorial', 'breaking', 'minimal', 'documentary', 'shorts'] as const, d.thumbnailStyle),
     callToAction: String(input.callToAction || d.callToAction),
     aiEnhancementEnabled: bool(input.aiEnhancementEnabled, d.aiEnhancementEnabled),

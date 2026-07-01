@@ -1,3 +1,5 @@
 import type { NextConfig } from 'next';
-const nextConfig: NextConfig = { experimental: { serverActions: { bodySizeLimit: '10mb' } } };
+const nextConfig: NextConfig = {
+  serverExternalPackages: ['text2wav'],
+};
 export default nextConfig;

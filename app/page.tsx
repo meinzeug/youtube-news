@@ -7,6 +7,8 @@ const statusLabels: Record<string, string> = {
   scripted: 'Skript fertig',
   video_ready: 'Video bereit',
   upload_prepared: 'Upload vorbereitet',
+  uploaded: 'Hochgeladen',
+  upload_failed: 'Upload fehlgeschlagen',
 };
 
 export default function Home() {
@@ -16,7 +18,7 @@ export default function Home() {
     articles: sql.prepare('select count(*) c from articles').get() as { c: number },
     queued: sql.prepare("select count(*) c from articles where status in ('new','scripted')").get() as { c: number },
     ready: sql.prepare("select count(*) c from articles where status='video_ready'").get() as { c: number },
-    uploaded: sql.prepare("select count(*) c from articles where status='upload_prepared'").get() as { c: number },
+    uploaded: sql.prepare("select count(*) c from articles where status in ('upload_prepared','uploaded')").get() as { c: number },
     withScript: sql.prepare('select count(*) c from articles where rewrittenText is not null').get() as { c: number },
     withAudio: sql.prepare('select count(*) c from articles where audioPath is not null').get() as { c: number },
   };
