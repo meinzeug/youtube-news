@@ -1,6 +1,35 @@
-# YouTube News Studio
+# YouTube News Company OS
 
-Moderne Next.js-16-Webapp zur automatisierten Produktion von YouTube-News-Videos:
+Eine Next.js-16-Redaktions- und Markenplattform, in der der Benutzer als CEO ein virtuelles KI-Team führt. YouTube ist der zentrale Videokanal, Twitch der Live-Kanal, das eigene Webmagazin das dauerhafte Archiv und Social Media die Distribution.
+
+## Company OS
+
+- CEO-Cockpit mit Kennzahlen für News-Pipeline, Produktion, Redaktionsaufträge, KI-Budget und Kanäle
+- Virtuelles Redaktionsteam aus Chefredaktion, Newsdesk, Recherche, Video-Autor, Social/Growth und Standards/Fakten
+- Persistenter Mitarbeiter-Chat über OpenRouter mit lokaler, kostenfreier Fallback-Logik
+- KI-generiertes Kanban-Board, Redaktionskalender und kanalübergreifende Kampagnenplanung
+- Eigenes öffentliches Webmagazin mit KI-erstellten, eigenständigen Fassungen und transparenter Quellenverlinkung
+- Twitch OAuth Authorization Code Flow, automatische Token-Erneuerung, Kanalstatus, Titel/Kategorie/Tags und Live-Highlight-Marker
+- YouTube OAuth, Video-Pipeline und Social Distribution aus einer gemeinsamen Oberfläche
+
+## OpenRouter-Modellrouting und Kostenkontrolle
+
+Nicht jede Aufgabe läuft über ein teures Universalmodell. Die zentrale Routing-Schicht ordnet jeder Anfrage ein Szenario, Tokenlimit und Kostenbudget zu. Die Standardwerte sind ein Preis-Snapshot der offiziellen OpenRouter Models API vom 2026-07-01 und können unter **Einstellungen → Dienste → OpenRouter** überschrieben werden:
+
+| Aufgabe | Standardmodell | Warum |
+| --- | --- | --- |
+| Triage | `qwen/qwen3-30b-a3b-instruct-2507` | sehr günstige Klassifikation und Priorisierung |
+| Social | `mistralai/ministral-8b-2512` | kurze Plattformtexte mit niedrigem Outputpreis |
+| Skript/Web | `deepseek/deepseek-v3.2` | gutes Preis-Leistungs-Verhältnis für längere Entwürfe |
+| Recherche | `google/gemini-2.5-flash-lite` | großer Kontext bei niedrigen Kosten |
+| Strategie | `openai/gpt-4.1-mini` | nur für Planungs- und Leitungsaufgaben |
+| Fakten/Risiko | `anthropic/claude-haiku-4.5` | gezielt für sensible Qualitätsprüfung |
+
+Monatsbudget, Einzellimit und CEO-Freigabeschwelle werden vor jeder Anfrage geprüft. Tatsächliche Token und Kosten werden aus der OpenRouter-Antwort in SQLite protokolliert. Bei fehlendem API-Key, Budgetstopp oder API-Ausfall bleiben Redaktion, Planung, Webpublikation und Medienproduktion durch deterministische lokale Fallbacks bedienbar.
+
+Technische Referenzen: [OpenRouter API](https://openrouter.ai/docs/api/reference/overview), [OpenRouter Models API](https://openrouter.ai/api/v1/models), [Twitch Authentication](https://dev.twitch.tv/docs/authentication/), [Twitch Helix API](https://dev.twitch.tv/docs/api/reference/).
+
+## Bestehende Produktionsfunktionen
 
 - Quellenverwaltung für RSS-Feeds und HTML-Seiten inkl. Schnellstart-Presets, verbesserter Artikel-Erkennung über JSON-LD, typische News-Links und lesbare Crawl-Vorschau
 - Regelmäßiger Crawl per API oder `npm run worker`

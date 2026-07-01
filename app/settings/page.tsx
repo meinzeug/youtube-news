@@ -6,6 +6,8 @@ import { normalizeVideoSettings } from '@/lib/video-settings';
 import { flattenSocialSettings, normalizeSocialSettings, socialChannels } from '@/lib/social';
 import { buildCronLine, getAutomationSettings, getAutomationStatus, installRootCron, installUserCron, nextRunHint, saveAutomationSettings } from '@/lib/automation';
 import { getYoutubeConnectionStatus, normalizeYoutubeSettings, YOUTUBE_READONLY_SCOPE, YOUTUBE_UPLOAD_SCOPE } from '@/lib/youtube';
+import { getTwitchStatus, normalizeTwitchSettings, TWITCH_SCOPES } from '@/lib/twitch';
+import { MODEL_ROUTES } from '@/lib/ai';
 
 async function persistServiceSettings(fd: FormData) {
   const { getSettings, setSettings } = await import('@/lib/db');
@@ -20,6 +22,13 @@ async function persistServiceSettings(fd: FormData) {
     oldYoutubeClientId !== nextYoutubeClientId ||
     oldYoutubeClientSecret !== nextYoutubeClientSecret ||
     oldYoutubeRedirectUri !== nextYoutubeRedirectUri;
+  const oldTwitchClientId = String(current.twitchClientId || '');
+  const oldTwitchClientSecret = String(current.twitchClientSecret || '');
+  const oldTwitchRedirectUri = String(current.twitchRedirectUri || '');
+  const nextTwitchClientId = formText(fd, 'twitchClientId');
+  const nextTwitchClientSecret = formSecret(fd, 'twitchClientSecret', oldTwitchClientSecret);
+  const nextTwitchRedirectUri = formText(fd, 'twitchRedirectUri');
+  const twitchCredentialsChanged = oldTwitchClientId !== nextTwitchClientId || oldTwitchClientSecret !== nextTwitchClientSecret || oldTwitchRedirectUri !== nextTwitchRedirectUri;
 
   const next: Record<string, unknown> = {
     openRouterKey: formSecret(fd, 'openRouterKey', String(current.openRouterKey || '')),
@@ -36,7 +45,18 @@ async function persistServiceSettings(fd: FormData) {
     youtubeCategoryId: formText(fd, 'youtubeCategoryId') || '25',
     youtubeContainsSyntheticMedia: fd.has('youtubeContainsSyntheticMedia'),
     youtubeSelfDeclaredMadeForKids: fd.has('youtubeSelfDeclaredMadeForKids'),
+    twitchClientId: nextTwitchClientId,
+    twitchClientSecret: nextTwitchClientSecret,
+    twitchRedirectUri: nextTwitchRedirectUri,
+    aiCompanyEnabled: fd.has('aiCompanyEnabled'),
+    aiMonthlyBudgetUsd: Math.max(0.1, Number(fd.get('aiMonthlyBudgetUsd') || 15)),
+    aiPerRequestLimitUsd: Math.max(0.001, Number(fd.get('aiPerRequestLimitUsd') || 0.08)),
+    aiApprovalThresholdUsd: Math.max(0.001, Number(fd.get('aiApprovalThresholdUsd') || 0.04)),
+    brandName: formText(fd, 'brandName') || 'YouTube News',
+    brandMission: formText(fd, 'brandMission'),
+    brandAudience: formText(fd, 'brandAudience'),
   };
+  for (const route of MODEL_ROUTES) next[`aiModel_${route.scenario}`] = formText(fd, `aiModel_${route.scenario}`) || route.model;
 
   if (youtubeCredentialsChanged) {
     Object.assign(next, {
@@ -51,6 +71,7 @@ async function persistServiceSettings(fd: FormData) {
       youtubeConnectedAt: '',
     });
   }
+  if (twitchCredentialsChanged) Object.assign(next, { twitchAccessToken: '', twitchRefreshToken: '', twitchTokenExpiresAt: '', twitchBroadcasterId: '', twitchBroadcasterLogin: '', twitchBroadcasterName: '', twitchGrantedScopes: '', twitchOAuthState: '', twitchConnectedAt: '' });
 
   setSettings(next);
 }
@@ -85,6 +106,30 @@ async function disconnectYoutubeAction() {
   'use server';
   const { disconnectYoutube } = await import('@/lib/youtube');
   disconnectYoutube();
+  revalidatePath('/settings');
+}
+
+async function connectTwitch(fd: FormData) {
+  'use server';
+  await persistServiceSettings(fd);
+  revalidatePath('/settings');
+  redirect('/api/twitch/oauth/start');
+}
+
+async function refreshTwitchConnection(fd: FormData) {
+  'use server';
+  await persistServiceSettings(fd);
+  const { setSettings } = await import('@/lib/db');
+  const { verifyTwitchConnection } = await import('@/lib/twitch');
+  try { await verifyTwitchConnection(); }
+  catch (error) { setSettings({ twitchLastConnectionError: error instanceof Error ? error.message : 'Twitch-Verbindung konnte nicht geprüft werden.' }); }
+  revalidatePath('/settings');
+}
+
+async function disconnectTwitchAction() {
+  'use server';
+  const { disconnectTwitch } = await import('@/lib/twitch');
+  disconnectTwitch();
   revalidatePath('/settings');
 }
 
@@ -144,23 +189,28 @@ export default async function Settings() {
   const social = normalizeSocialSettings(s);
   const youtube = normalizeYoutubeSettings(s);
   const youtubeStatus = getYoutubeConnectionStatus(s);
+  const twitch = normalizeTwitchSettings(s);
+  const twitchStatus = getTwitchStatus(s);
   const suggestedYoutubeRedirectUri = youtube.redirectUri || `${automation.baseUrl.replace(/\/$/, '')}/api/youtube/oauth/callback`;
+  const suggestedTwitchRedirectUri = twitch.redirectUri || `${automation.baseUrl.replace(/\/$/, '')}/api/twitch/oauth/callback`;
   return (
     <main className="page">
       <h1>Einstellungen</h1>
       <div className="grid two">
         <form id="settings" action={saveServiceSettings}>
           <h2>Dienste</h2>
-          <p className="muted">API-Zugänge für Text, Sprache und YouTube-Upload. Secret-Felder leer lassen, um gespeicherte Werte beizubehalten.</p>
+          <p className="muted">API-Zugänge für KI, Sprache, YouTube und Twitch. Secret-Felder leer lassen, um gespeicherte Werte beizubehalten.</p>
           <div className="service-tabs">
             <input id="service-openrouter" type="radio" name="serviceTab" defaultChecked />
             <input id="service-elevenlabs" type="radio" name="serviceTab" />
             <input id="service-youtube" type="radio" name="serviceTab" />
+            <input id="service-twitch" type="radio" name="serviceTab" />
 
             <div className="service-tab-list" aria-label="Dienste">
               <label className="service-tab-label" htmlFor="service-openrouter">OpenRouter</label>
               <label className="service-tab-label" htmlFor="service-elevenlabs">ElevenLabs</label>
               <label className="service-tab-label" htmlFor="service-youtube">YouTube</label>
+              <label className="service-tab-label" htmlFor="service-twitch">Twitch</label>
             </div>
 
             <section className="service-panel openrouter-panel">
@@ -173,6 +223,17 @@ export default async function Settings() {
                 {video.aiSuggestedModels.split(',').map((model) => <option key={model.trim()} value={model.trim()} />)}
               </datalist>
               <p className="muted">OpenRouter wird für KI-Regie, Skript, Titel, Beschreibung, Kapitel und Thumbnail-Prompt verwendet.</p>
+              <div id="ai-company" className="oauth-checklist">
+                <strong>KI-Unternehmen & Kostenbremse</strong>
+                <label className="check"><input name="aiCompanyEnabled" type="checkbox" defaultChecked={s.aiCompanyEnabled !== false} /> KI-Mitarbeiter aktiv</label>
+                <div className="form-split"><div><label>Monatsbudget (USD)</label><input name="aiMonthlyBudgetUsd" type="number" min="0.1" step="0.1" defaultValue={s.aiMonthlyBudgetUsd ?? 15} /></div><div><label>Max. pro Anfrage (USD)</label><input name="aiPerRequestLimitUsd" type="number" min="0.001" step="0.001" defaultValue={s.aiPerRequestLimitUsd ?? 0.08} /></div></div>
+                <label>Freigabeschwelle (USD)</label><input name="aiApprovalThresholdUsd" type="number" min="0.001" step="0.001" defaultValue={s.aiApprovalThresholdUsd ?? 0.04} />
+                <label>Markenname</label><input name="brandName" defaultValue={s.brandName || 'YouTube News'} />
+                <label>Mission</label><textarea name="brandMission" rows={3} defaultValue={s.brandMission || 'Unabhängige Nachrichten verständlich einordnen und als Video, Livestream und Artikel veröffentlichen.'} />
+                <label>Zielgruppe</label><textarea name="brandAudience" rows={2} defaultValue={s.brandAudience || 'Deutschsprachige Zuschauer, die schnelle Meldungen und nachvollziehbare Einordnung suchen.'} />
+              </div>
+              <h4>Modelle nach Aufgabe</h4>
+              {MODEL_ROUTES.map((route) => <div className="model-setting" key={route.scenario}><label>{route.label}</label><input name={`aiModel_${route.scenario}`} defaultValue={s[`aiModel_${route.scenario}`] || route.model} /><small>{route.purpose} · Richtwert ${route.inputPerMillion}/M Input, ${route.outputPerMillion}/M Output</small></div>)}
             </section>
 
             <section className="service-panel elevenlabs-panel">
@@ -298,6 +359,32 @@ export default async function Settings() {
                 <button className="secondary-button" formAction={refreshYoutubeConnection}>Verbindung prüfen</button>
                 <button className="danger-button" formAction={disconnectYoutubeAction}>YouTube trennen</button>
               </div>
+            </section>
+
+            <section className="service-panel twitch-panel">
+              <div className="service-panel-header"><h3>Twitch</h3><a className="help-icon" href="#twitch-oauth-help" aria-label="Twitch-Verbindungsanleitung öffnen">?</a></div>
+              <div id="twitch-oauth-help" className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="twitch-help-title">
+                <a className="modal-backdrop" href="#settings" aria-label="Anleitung schließen" />
+                <div className="modal-card"><div className="modal-header"><div><p className="eyebrow">Twitch OAuth Setup</p><h2 id="twitch-help-title">Twitch verbinden</h2></div><a className="modal-close" href="#settings">×</a></div>
+                  <ol className="step-list">
+                    <li><strong>Twitch Developer Console öffnen.</strong><p>Öffne die <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noreferrer">Twitch Developer Console</a>, aktiviere bei Bedarf 2FA und registriere eine Anwendung.</p></li>
+                    <li><strong>OAuth Redirect URL hinterlegen.</strong><p>Trage exakt diese URL ein:</p><code className="copy-value">{suggestedTwitchRedirectUri}</code></li>
+                    <li><strong>Kategorie wählen.</strong><p>Für diese serverseitige Webanwendung passt in der Regel „Website Integration“.</p></li>
+                    <li><strong>Client ID und Secret übernehmen.</strong><p>Kopiere die Client ID, erzeuge ein neues Secret und trage beides hier ein.</p></li>
+                    <li><strong>Berechtigung.</strong><p>Die App fordert minimal <code>{TWITCH_SCOPES.join(' ')}</code> an. Damit kann sie Streamtitel, Kategorie und Tags verwalten sowie Live-Marker setzen.</p></li>
+                    <li><strong>Verbinden.</strong><p>Klicke auf „Speichern und Twitch verbinden“, melde dich mit dem Broadcaster-Konto an und bestätige den Zugriff.</p></li>
+                  </ol><p className="muted">Offizielle Referenzen: <a href="https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/" target="_blank" rel="noreferrer">OAuth Authorization Code Flow</a> und <a href="https://dev.twitch.tv/docs/api/reference/" target="_blank" rel="noreferrer">Twitch Helix API</a>.</p>
+                </div>
+              </div>
+              <div id="twitch-connected" className="service-status"><span className={twitchStatus.connected ? 'badge ok' : 'badge muted-badge'}>{twitchStatus.connected ? 'Twitch verbunden' : 'Twitch nicht verbunden'}</span></div>
+              {twitchStatus.broadcasterId ? <p>Kanal: <a href={twitchStatus.channelUrl} target="_blank" rel="noreferrer">{twitchStatus.broadcasterName || twitchStatus.broadcasterLogin}</a></p> : null}
+              {twitchStatus.lastError ? <p className="error">Twitch-Verbindung: {twitchStatus.lastError}</p> : null}
+              <label>Twitch Client ID</label><input name="twitchClientId" defaultValue={twitch.clientId} autoComplete="off" />
+              <label>Twitch Client Secret</label><input name="twitchClientSecret" type="password" placeholder={twitch.clientSecret ? 'gespeichert – leer lassen zum Behalten' : ''} autoComplete="off" />
+              <label>OAuth Redirect URI</label><input name="twitchRedirectUri" defaultValue={suggestedTwitchRedirectUri} />
+              <div className="oauth-checklist"><strong>Benötigte Twitch-Konfiguration</strong><ul><li>Anwendung unter dev.twitch.tv registrieren.</li><li>Obige Redirect URI exakt eintragen.</li><li>OAuth Authorization Code Flow verwenden; Tokens werden serverseitig gespeichert und erneuert.</li><li>Scope: <code>{TWITCH_SCOPES.join(' ')}</code>.</li></ul></div>
+              {twitchStatus.tokenExpiresAt ? <p className="muted">Access Token gültig bis: {twitchStatus.tokenExpiresAt}</p> : null}
+              <div className="service-actions"><button formAction={connectTwitch}>Speichern und Twitch verbinden</button><button className="secondary-button" formAction={refreshTwitchConnection}>Verbindung prüfen</button><button className="danger-button" formAction={disconnectTwitchAction}>Twitch trennen</button></div>
             </section>
           </div>
           <button>Dienste speichern</button>
