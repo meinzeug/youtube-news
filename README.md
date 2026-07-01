@@ -2,7 +2,7 @@
 
 Moderne Next.js-16-Webapp zur automatisierten Produktion von YouTube-News-Videos:
 
-- Quellenverwaltung für RSS-Feeds und HTML-Seiten inkl. verbesserter Artikel-Erkennung über JSON-LD, typische News-Links und lesbare Crawl-Vorschau
+- Quellenverwaltung für RSS-Feeds und HTML-Seiten inkl. Schnellstart-Presets, verbesserter Artikel-Erkennung über JSON-LD, typische News-Links und lesbare Crawl-Vorschau
 - Regelmäßiger Crawl per API oder `npm run worker`
 - OpenRouter-Integration für umformulierte deutsche Sprechertexte
 - ElevenLabs TTS plus lokaler FFmpeg-Fallback ohne externe API
@@ -68,7 +68,7 @@ curl -X POST http://localhost:3000/api/workflow/run \
 
 ### Crawler-Vorschau und Beispieltest
 
-Die Quellenverwaltung enthält jetzt eine **Crawler-Vorschau testen**-Box. Damit kann eine RSS- oder HTML-URL vor dem Speichern geprüft werden; die Vorschau zeigt erkannte Artikelkandidaten, importiert aber noch nichts. In der Artikel-Queue wird zusätzlich die geschätzte Sprechzeit des aktuell gefilterten Materials angezeigt.
+Die Quellenverwaltung enthält jetzt eine **Crawler-Vorschau testen**-Box und einen **Quellen-Schnellstart** mit vorkonfigurierten Beispielquellen wie BILD.de, Tagesschau, heise und DW. Damit kann eine RSS- oder HTML-URL vor dem Speichern geprüft werden; die Vorschau zeigt erkannte Artikelkandidaten, importiert aber noch nichts. In der Artikel-Queue wird zusätzlich die geschätzte Sprechzeit des aktuell gefilterten Materials angezeigt.
 
 Getestete Crawl-Kommandos:
 
@@ -76,7 +76,7 @@ Getestete Crawl-Kommandos:
 npm run test:crawl -- https://www.bild.de "BILD Test"
 ```
 
-In dieser Ausführungsumgebung war der externe Zugriff auf BILD.de per `ENETUNREACH` blockiert. Deshalb wurde derselbe Crawler zusätzlich mit einem lokalen `data:text/html`-Beispiel getestet. Der lokale Test importierte zwei Beispielartikel in die SQLite-Datenbank und validierte, dass Artikel vorhanden sind.
+In dieser Ausführungsumgebung war der externe Zugriff auf BILD.de am 2026-07-01 per `ENETUNREACH` blockiert. Deshalb wurde derselbe Crawler zusätzlich mit einem lokalen `data:text/html`-Beispiel getestet. Der lokale Test importierte zwei Beispielartikel in die SQLite-Datenbank und validierte, dass Artikel vorhanden sind. Der HTML-Crawler priorisiert nun außerdem Headline-Test-IDs, Headline-Klassen, Bild-Alt-Texte, Regional-/Ratgeber-Ressorts und sortiert Kandidaten nach Artikelscore, damit Startseiten wie BILD.de zuverlässiger verwertbare Meldungen liefern.
 
 ## Social-Media-Verteilung nach YouTube-Upload
 
@@ -116,4 +116,4 @@ Alle automatisch erzeugten Medien bleiben Laufzeit-Artefakte unter `public/gener
 
 ## Verbesserter Crawler
 
-Der Crawler versucht zuerst RSS/Atom zu lesen. Wenn eine Quelle nur eine HTML-Startseite anbietet, sucht er zusätzlich nach strukturierten `NewsArticle`-/`Article`-Daten in JSON-LD und nach typischen Nachrichtenlinks in Bereichen wie `article`, `main` und Überschriften. In der Quellenverwaltung erscheinen pro Quelle die zuletzt gefundenen Artikel direkt in der Karte, damit Crawl-Ergebnisse ohne Wechsel in die Queue kontrolliert werden können.
+Der Crawler versucht zuerst RSS/Atom zu lesen. Für den Schnellstart bringt die App Presets für BILD.de, Tagesschau Inland, heise online und DW Deutsch mit, die direkt in der Quellenverwaltung hinzugefügt oder reaktiviert werden können. Wenn eine Quelle nur eine HTML-Startseite anbietet, sucht er zusätzlich nach strukturierten `NewsArticle`-/`Article`-Daten in JSON-LD und nach typischen Nachrichtenlinks in Bereichen wie `article`, `main` und Überschriften. In der Quellenverwaltung erscheinen pro Quelle die zuletzt gefundenen Artikel direkt in der Karte, damit Crawl-Ergebnisse ohne Wechsel in die Queue kontrolliert werden können.

@@ -47,10 +47,14 @@ async function crawlHtml(url: string, limit: number): Promise<CrawledArticle[]> 
     'article a[href]',
     'main a[href]',
     'h1 a[href], h2 a[href], h3 a[href]',
+    '[data-testid*=headline] a[href]',
+    '[class*=headline] a[href]',
     'a[href*="/news/"]',
     'a[href*="/politik/"]',
     'a[href*="/unterhaltung/"]',
     'a[href*="/sport/"]',
+    'a[href*="/regional/"]',
+    'a[href*="/ratgeber/"]',
   ];
 
   $(selectors.join(',')).each((_, el) => {
@@ -59,13 +63,15 @@ async function crawlHtml(url: string, limit: number): Promise<CrawledArticle[]> 
     const href = a.attr('href');
     if (!href || href.startsWith('#') || href.startsWith('mailto:')) return;
     const articleUrl = normalizeUrl(href, url);
-    const title = cleanText(a.text() || a.attr('aria-label') || a.attr('title') || '');
+    const title = extractLinkTitle($, a);
     const containerText = cleanText(a.closest('article, section, li, div').text());
     const rawText = containerText.length > title.length ? containerText : title;
     if (isLikelyArticle(articleUrl, title)) candidates.set(articleUrl, { url: articleUrl, title, rawText });
   });
 
-  return uniqueArticles(Array.from(candidates.values())).slice(0, limit);
+  return uniqueArticles(Array.from(candidates.values()))
+    .sort((a, b) => articleScore(b) - articleScore(a))
+    .slice(0, limit);
 }
 
 function collectJsonLd($: cheerio.CheerioAPI, baseUrl: string): CrawledArticle[] {
@@ -88,14 +94,28 @@ function collectJsonLd($: cheerio.CheerioAPI, baseUrl: string): CrawledArticle[]
 }
 
 async function fetchText(url: string) {
+  if (url.startsWith('data:text/html,')) return decodeURIComponent(url.slice('data:text/html,'.length));
   const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; YouTubeNewsStudio/1.0)', accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } });
   if (!response.ok) throw new Error(`Crawl fehlgeschlagen (${response.status}) für ${url}`);
   return response.text();
 }
 
 function normalizeUrl(href: string, base: string) { return new URL(href, base).toString().split('#')[0]; }
+function extractLinkTitle($: cheerio.CheerioAPI, a: cheerio.Cheerio<any>) {
+  const direct = cleanText(a.text() || a.attr('aria-label') || a.attr('title') || '');
+  if (direct.length >= 12) return direct;
+  const imageAlt = cleanText(a.find('img[alt]').first().attr('alt') || '');
+  if (imageAlt.length >= 12) return imageAlt;
+  return direct;
+}
+function articleScore(item: CrawledArticle) {
+  let score = Math.min(80, item.title.length) + Math.min(120, item.rawText.length / 8);
+  if (/\/\d{4}\/|\/artikel\/|\/news\/|\/politik\/|\/sport\//i.test(item.url)) score += 30;
+  if (/live|ticker|video|podcast|newsletter/i.test(item.url)) score -= 40;
+  return score;
+}
 function cleanText(value: string) { return value.replace(/\s+/g, ' ').trim().slice(0, 4000); }
-function isLikelyArticle(url: string, title: string) { return title.length >= 12 && !/login|abo|newsletter|video|podcast|shop|datenschutz|impressum/i.test(url); }
+function isLikelyArticle(url: string, title: string) { return title.length >= 12 && !/login|abo|newsletter|video|podcast|shop|datenschutz|impressum|kontakt|gewinnspiel/i.test(url); }
 function uniqueArticles(items: CrawledArticle[]) { const seen = new Set<string>(); return items.filter((item) => { if (seen.has(item.url)) return false; seen.add(item.url); return true; }); }
 
 export function isSourceDue(source: Pick<Source, 'lastCrawledAt' | 'intervalMinutes'>, now = new Date()) {
