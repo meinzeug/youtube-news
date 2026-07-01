@@ -41,13 +41,14 @@ export default function Studio() {
           <p><span className="badge">{automation.enabled ? 'aktiv' : 'inaktiv'}</span> alle {automation.intervalMinutes} Minuten · {automation.maxArticles} Artikel/Lauf</p>
           <p>{queued} Artikel warten auf Verarbeitung.</p>
           <p><strong>Video-Preset:</strong> {video.aspectRatio} · {video.resolution} · {dims.width}×{dims.height}</p>
+          <p><strong>KI-Regie:</strong> {video.aiEnhancementEnabled ? `${video.aiScriptMode} · ${video.aiTone} · ${video.aiTargetDuration}s` : 'aus'}</p>
           <p>Intro: {video.introMode === 'none' ? 'aus' : video.introText} · Outro: {video.outroMode === 'none' ? 'aus' : video.outroText}</p>
           <a href="/settings">Automation und Video konfigurieren</a>
         </div>
       </div>
       <h2>Letzte Aktivitäten</h2>
       <table><tbody>{latest.map((a) => <tr key={a.id}><td><a href={`/articles?q=${encodeURIComponent(a.title)}`}>{a.title}</a></td><td><span className="badge">{a.status}</span></td><td>{a.updatedAt}</td><td>{a.videoPath ? <a href={a.videoPath}>Video</a> : '—'}</td></tr>)}</tbody></table>
-      <div className="grid"><div className="card"><h3>1. Crawl</h3><p>RSS/HTML Quellen werden dedupliziert.</p></div><div className="card"><h3>2. KI Skript</h3><p>OpenRouter schreibt originellen deutschen Sprechertext mit konfigurierbarem Call-to-Action.</p></div><div className="card"><h3>3. Audio & Bild</h3><p>ElevenLabs oder lokaler FFmpeg-Fallback; SVG-Bildgenerator ohne Binärdateien im gewählten Format.</p></div><div className="card"><h3>4. Video & Upload</h3><p>FFmpeg rendert MP4 inklusive Intro, Outro, Bauchbinde und YouTube-Metadaten-Preset.</p></div></div>
+      <div className="card ai-panel"><h2>OpenRouter KI-Workflow</h2><p>Die Pipeline nutzt strukturierte JSON-Ausgaben für Skript, Thumbnail-Prompt, Titel, Beschreibung, Kapitel und Sicherheitsnotizen. Empfohlene Modelle: {video.aiSuggestedModels}.</p><p className="muted">Für aktuelle Modelllisten kann OpenRouter per <code>GET /api/v1/models</code> abgefragt werden; die App speichert bewusst nur Text-Einstellungen, keine Binärdateien.</p></div><div className="grid"><div className="card"><h3>1. Crawl</h3><p>RSS/HTML Quellen werden dedupliziert.</p></div><div className="card"><h3>2. KI-Regie</h3><p>OpenRouter plant strukturierte Videokonzepte mit Hook, Sprechertext, Thumbnail-Prompt, Kapiteln und Faktenhinweisen.</p></div><div className="card"><h3>3. Audio & Bild</h3><p>ElevenLabs oder lokaler FFmpeg-Fallback; SVG-Bildgenerator ohne Binärdateien im gewählten Format.</p></div><div className="card"><h3>4. Video & Upload</h3><p>FFmpeg rendert MP4 inklusive Intro, Outro, Bauchbinde und YouTube-Metadaten-Preset.</p></div></div>
     </main>
   );
 }

@@ -42,7 +42,11 @@ export default async function Settings() {
           <label>OpenRouter API Key</label>
           <input name="openRouterKey" type="password" defaultValue={s.openRouterKey || ''} />
           <label>Textmodell</label>
-          <input name="openRouterTextModel" defaultValue={s.openRouterTextModel || 'openai/gpt-4.1-mini'} />
+          <input name="openRouterTextModel" list="openrouter-models" defaultValue={s.openRouterTextModel || 'openai/gpt-4.1-mini'} />
+          <datalist id="openrouter-models">
+            {video.aiSuggestedModels.split(',').map((model) => <option key={model.trim()} value={model.trim()} />)}
+          </datalist>
+          <p className="muted">Tipp: OpenRouter bietet eine OpenAI-kompatible Chat-Completions-API mit Modell-Routing; Modelle können über die OpenRouter Models API aktuell gehalten werden.</p>
           <label>ElevenLabs API Key</label>
           <input name="elevenLabsKey" type="password" defaultValue={s.elevenLabsKey || ''} />
           <label>ElevenLabs Voice ID</label>
@@ -109,7 +113,30 @@ export default async function Settings() {
             <option value="editorial">Editorial</option>
             <option value="breaking">Breaking News</option>
             <option value="minimal">Minimal</option>
+            <option value="documentary">Dokumentarisch</option>
+            <option value="shorts">Shorts mit großer Headline</option>
           </select>
+          <div className="ai-panel">
+            <h3>KI-Regie mit OpenRouter</h3>
+            <p className="muted">Erzeugt per LLM ein strukturiertes Videokonzept mit Skript, Thumbnail-Prompt, YouTube-Titel, Beschreibung, Kapiteln und Sicherheitsnotizen.</p>
+            <label className="check"><input name="aiEnhancementEnabled" type="checkbox" defaultChecked={video.aiEnhancementEnabled} /> KI-Video-Regie aktivieren</label>
+            <div className="form-split">
+              <div><label>Skriptmodus</label><select name="aiScriptMode" defaultValue={video.aiScriptMode}><option value="balanced">Ausgewogen</option><option value="shorts">Shorts</option><option value="deepDive">Deep Dive</option><option value="breaking">Breaking News</option></select></div>
+              <div><label>Ton</label><select name="aiTone" defaultValue={video.aiTone}><option value="neutral">Neutral</option><option value="urgent">Dringlich</option><option value="explainer">Erklärend</option><option value="optimistic">Optimistisch</option></select></div>
+            </div>
+            <label>Zieldauer in Sekunden</label>
+            <input name="aiTargetDuration" type="number" min="20" max="600" defaultValue={video.aiTargetDuration} />
+            <label>Zielgruppe</label>
+            <textarea name="aiAudience" rows={2} defaultValue={video.aiAudience} />
+            <label className="check"><input name="aiIncludeHook" type="checkbox" defaultChecked={video.aiIncludeHook} /> Starken Hook am Anfang planen</label>
+            <label className="check"><input name="aiIncludeChapters" type="checkbox" defaultChecked={video.aiIncludeChapters} /> Kapitel/Timecodes vorschlagen</label>
+            <label>Fakten- und Sicherheitsanweisung</label>
+            <textarea name="aiFactCheckPrompt" rows={3} defaultValue={video.aiFactCheckPrompt} />
+            <label>Bildprompt-Stil</label>
+            <textarea name="aiImagePromptStyle" rows={2} defaultValue={video.aiImagePromptStyle} />
+            <label>Empfohlene OpenRouter-Modelle</label>
+            <input name="aiSuggestedModels" defaultValue={video.aiSuggestedModels} />
+          </div>
           <label>Call-to-Action für Skripte</label>
           <textarea name="callToAction" rows={3} defaultValue={video.callToAction} />
           <h3>YouTube-Metadaten</h3>
