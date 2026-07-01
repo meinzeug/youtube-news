@@ -15,6 +15,19 @@ async function addSource(fd: FormData) {
   revalidatePath('/sources');
 }
 
+async function updateSource(fd: FormData) {
+  'use server';
+  const { sql } = await import('@/lib/db');
+  const id = Number(fd.get('id'));
+  const name = String(fd.get('name') || '').trim();
+  const url = String(fd.get('url') || '').trim();
+  const interval = Math.max(1, Math.min(1440, Number(fd.get('intervalMinutes') || 30)));
+  if (id && name && url) {
+    sql.prepare('update sources set name=?, url=?, intervalMinutes=? where id=?').run(name, url, interval, id);
+  }
+  revalidatePath('/sources');
+}
+
 async function toggleSource(fd: FormData) {
   'use server';
   const { sql } = await import('@/lib/db');
@@ -50,12 +63,15 @@ export default function Sources({ searchParams }: { searchParams?: { q?: string;
   if (selectedState === 'active') where.push('active=1');
   if (selectedState === 'paused') where.push('active=0');
   const sources = sql.prepare(`select * from sources ${where.length ? `where ${where.join(' and ')}` : ''} order by active desc, id desc`).all(...sourceParams) as Source[];
-  const sourceStats = sql.prepare('select sourceId, count(*) c from articles group by sourceId').all() as { sourceId: number; c: number }[];
+  const sourceStats = sql.prepare('select sourceId, count(*) c, max(updatedAt) latest from articles group by sourceId').all() as { sourceId: number; c: number; latest: string | null }[];
   const counts = new Map(sourceStats.map((row) => [row.sourceId, row.c]));
+  const latestBySource = new Map(sourceStats.map((row) => [row.sourceId, row.latest]));
+  const activeCount = sources.filter((source) => source.active).length;
+  const dueCount = sources.filter((source) => source.active && isSourceDue(source)).length;
 
   return (
     <main className="page">
-      <div className="page-title"><div><p className="eyebrow">Quellenverwaltung</p><h1>Quellen</h1></div><span className="badge">{sources.length} Treffer</span></div>
+      <div className="page-title"><div><p className="eyebrow">Quellenverwaltung</p><h1>Quellen</h1></div><span className="badge">{sources.length} Treffer · {activeCount} aktiv · {dueCount} fällig</span></div>
       <form className="toolbar sources-toolbar" action="/sources">
         <input name="q" placeholder="Quelle oder URL suchen" defaultValue={query} />
         <select name="state" defaultValue={selectedState} aria-label="Quellenstatus filtern">
@@ -82,11 +98,13 @@ export default function Sources({ searchParams }: { searchParams?: { q?: string;
             <div className="card-header"><h3>{source.name}</h3><span className="badge">{source.active ? 'aktiv' : 'pausiert'}</span></div>
             <p className="muted url-text">{source.url}</p>
             <p>{counts.get(source.id) || 0} Artikel · alle {source.intervalMinutes} min</p>
+            <p className="muted">Letzter Artikel: {latestBySource.get(source.id) || 'noch keiner'}</p>
             <div className="automation-health">
               <span className={isSourceDue(source) ? 'badge ok' : 'badge muted-badge'}>{isSourceDue(source) ? 'fällig' : 'geplant'}</span>
               <span className="badge muted-badge">Nächster Crawl: {nextCrawlAt(source) || 'sofort'}</span>
             </div>
             <p className="muted">Zuletzt gecrawlt: {source.lastCrawledAt || 'noch nie'}</p>
+            <details className="article-details"><summary>Quelle bearbeiten</summary><form action={updateSource} className="inline-edit"><input type="hidden" name="id" value={source.id} /><label>Name</label><input name="name" defaultValue={source.name} required /><label>URL</label><input name="url" type="url" defaultValue={source.url} required /><label>Intervall in Minuten</label><input name="intervalMinutes" type="number" min="1" max="1440" defaultValue={source.intervalMinutes} /><button>Änderungen speichern</button></form></details>
             <div className="action-row">
               <form action={crawlSingleSource}><input type="hidden" name="id" value={source.id} /><button>Jetzt crawlen</button></form>
               <form action={toggleSource}><input type="hidden" name="id" value={source.id} /><button className="secondary-button">{source.active ? 'Pausieren' : 'Aktivieren'}</button></form>
