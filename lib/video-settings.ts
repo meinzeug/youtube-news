@@ -18,13 +18,31 @@ export type VideoSettings = {
   outroAssetPath: string;
   lowerThirdEnabled: boolean;
   lowerThirdText: string;
-  thumbnailStyle: 'editorial' | 'breaking' | 'minimal';
+  thumbnailStyle: 'editorial' | 'breaking' | 'minimal' | 'documentary' | 'shorts';
   callToAction: string;
+  aiEnhancementEnabled: boolean;
+  aiScriptMode: 'balanced' | 'shorts' | 'deepDive' | 'breaking';
+  aiTone: 'neutral' | 'urgent' | 'explainer' | 'optimistic';
+  aiAudience: string;
+  aiTargetDuration: number;
+  aiIncludeChapters: boolean;
+  aiIncludeHook: boolean;
+  aiFactCheckPrompt: string;
+  aiImagePromptStyle: string;
+  aiSuggestedModels: string;
 };
+
+export const latestOpenRouterModelSuggestions = [
+  'openai/gpt-4.1-mini',
+  'anthropic/claude-sonnet-4',
+  'google/gemini-2.5-pro',
+  'meta-llama/llama-4-maverick',
+  'openrouter/auto',
+];
 
 export const defaultVideoSettings: VideoSettings = {
   youtubeTitleTemplate: '{{title}}',
-  youtubeDescriptionTemplate: '{{summary}}\n\nQuelle: {{sourceUrl}}',
+  youtubeDescriptionTemplate: '{{summary}}\n\nKapitel:\n{{chapters}}\n\nQuelle: {{sourceUrl}}',
   youtubeTags: 'news, nachrichten, politik, wirtschaft, aktuell',
   privacyStatus: 'private',
   language: 'de',
@@ -44,9 +62,19 @@ export const defaultVideoSettings: VideoSettings = {
   lowerThirdText: 'Aktuelle Nachrichten',
   thumbnailStyle: 'editorial',
   callToAction: 'Wenn dir dieses Update geholfen hat, abonniere den Kanal.',
+  aiEnhancementEnabled: true,
+  aiScriptMode: 'balanced',
+  aiTone: 'neutral',
+  aiAudience: 'deutschsprachige YouTube-Zuschauer, die schnelle und verlässliche Einordnung erwarten',
+  aiTargetDuration: 60,
+  aiIncludeChapters: true,
+  aiIncludeHook: true,
+  aiFactCheckPrompt: 'Markiere unsichere Angaben als laut Quelle/berichtete Angaben und erfinde keine Zahlen, Namen oder Zitate.',
+  aiImagePromptStyle: 'realistische Editorial-Illustration, starke Headline-Fläche, keine Logos, keine Gesichter realer Personen ohne sichere Quelle',
+  aiSuggestedModels: latestOpenRouterModelSuggestions.join(', '),
 };
 
-const bool = (value: unknown) => value === true || value === 'true' || value === 'on' || value === '1';
+const bool = (value: unknown, fallback = false) => value === undefined ? fallback : value === true || value === 'true' || value === 'on' || value === '1';
 const num = (value: unknown, fallback: number, min: number, max: number) => Math.max(min, Math.min(max, Number(value || fallback)));
 const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T => allowed.includes(value as T) ? value as T : fallback;
 
@@ -70,10 +98,20 @@ export function normalizeVideoSettings(input: Record<string, unknown> = {}): Vid
     outroText: String(input.outroText || d.outroText),
     outroDuration: num(input.outroDuration, d.outroDuration, 1, 30),
     outroAssetPath: String(input.outroAssetPath || ''),
-    lowerThirdEnabled: bool(input.lowerThirdEnabled),
+    lowerThirdEnabled: bool(input.lowerThirdEnabled, d.lowerThirdEnabled),
     lowerThirdText: String(input.lowerThirdText || d.lowerThirdText),
-    thumbnailStyle: pick(input.thumbnailStyle, ['editorial', 'breaking', 'minimal'] as const, d.thumbnailStyle),
+    thumbnailStyle: pick(input.thumbnailStyle, ['editorial', 'breaking', 'minimal', 'documentary', 'shorts'] as const, d.thumbnailStyle),
     callToAction: String(input.callToAction || d.callToAction),
+    aiEnhancementEnabled: bool(input.aiEnhancementEnabled, d.aiEnhancementEnabled),
+    aiScriptMode: pick(input.aiScriptMode, ['balanced', 'shorts', 'deepDive', 'breaking'] as const, d.aiScriptMode),
+    aiTone: pick(input.aiTone, ['neutral', 'urgent', 'explainer', 'optimistic'] as const, d.aiTone),
+    aiAudience: String(input.aiAudience || d.aiAudience),
+    aiTargetDuration: num(input.aiTargetDuration, d.aiTargetDuration, 20, 600),
+    aiIncludeChapters: bool(input.aiIncludeChapters, d.aiIncludeChapters),
+    aiIncludeHook: bool(input.aiIncludeHook, d.aiIncludeHook),
+    aiFactCheckPrompt: String(input.aiFactCheckPrompt || d.aiFactCheckPrompt),
+    aiImagePromptStyle: String(input.aiImagePromptStyle || d.aiImagePromptStyle),
+    aiSuggestedModels: String(input.aiSuggestedModels || d.aiSuggestedModels),
   };
 }
 
