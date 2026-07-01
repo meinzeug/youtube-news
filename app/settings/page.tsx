@@ -1,11 +1,19 @@
 export const dynamic = 'force-dynamic';
 import { getSettings } from '@/lib/db';
+import { normalizeVideoSettings } from '@/lib/video-settings';
 import { buildCronLine, getAutomationSettings, getAutomationStatus, installRootCron, installUserCron, nextRunHint, saveAutomationSettings } from '@/lib/automation';
 
 async function saveSettings(fd: FormData) {
   'use server';
   const { setSettings } = await import('@/lib/db');
   setSettings(Object.fromEntries(fd));
+}
+
+async function saveVideoSettings(fd: FormData) {
+  'use server';
+  const { setSettings } = await import('@/lib/db');
+  const { normalizeVideoSettings } = await import('@/lib/video-settings');
+  setSettings(normalizeVideoSettings(Object.fromEntries(fd)));
 }
 
 async function saveAutomation(fd: FormData) {
@@ -23,6 +31,7 @@ async function applyCron(fd: FormData) {
 export default async function Settings() {
   const s = getSettings() as any;
   const automation = getAutomationSettings();
+  const video = normalizeVideoSettings(s);
   const status = await getAutomationStatus();
   return (
     <main className="page">
@@ -41,6 +50,80 @@ export default async function Settings() {
           <label>YouTube OAuth Client ID</label>
           <input name="youtubeClientId" defaultValue={s.youtubeClientId || ''} />
           <button>Speichern</button>
+        </form>
+
+
+        <form action={saveVideoSettings}>
+          <h2>YouTube-Video Produktion</h2>
+          <p className="muted">Detaillierte Vorgaben für jedes generierte Video: Format, Intro/Outro, Bauchbinde, Thumbnail-Stil und spätere Upload-Metadaten.</p>
+          <div className="form-split">
+            <div>
+              <label>Format</label>
+              <select name="aspectRatio" defaultValue={video.aspectRatio}>
+                <option value="16:9">16:9 YouTube</option>
+                <option value="9:16">9:16 Shorts/Reels</option>
+                <option value="1:1">1:1 Social Feed</option>
+              </select>
+            </div>
+            <div>
+              <label>Auflösung</label>
+              <select name="resolution" defaultValue={video.resolution}>
+                <option value="1080p">1080p</option>
+                <option value="720p">720p</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-split">
+            <div><label>Hintergrundfarbe</label><input name="backgroundColor" type="color" defaultValue={video.backgroundColor} /></div>
+            <div><label>Akzentfarbe</label><input name="accentColor" type="color" defaultValue={video.accentColor} /></div>
+          </div>
+          <label>Intro</label>
+          <select name="introMode" defaultValue={video.introMode}>
+            <option value="generated">Online per SVG/FFmpeg erzeugen</option>
+            <option value="asset">Eigenes Video/Bild aus public/ verwenden</option>
+            <option value="none">Kein Intro</option>
+          </select>
+          <label>Intro-Text</label>
+          <input name="introText" defaultValue={video.introText} />
+          <label>Intro-Dauer in Sekunden</label>
+          <input name="introDuration" type="number" min="1" max="30" defaultValue={video.introDuration} />
+          <label>Intro-Dateipfad optional</label>
+          <input name="introAssetPath" placeholder="/uploads/intro.mp4 oder /generated/mein-intro.svg" defaultValue={video.introAssetPath} />
+          <label>Outro</label>
+          <select name="outroMode" defaultValue={video.outroMode}>
+            <option value="generated">Online per SVG/FFmpeg erzeugen</option>
+            <option value="asset">Eigenes Video/Bild aus public/ verwenden</option>
+            <option value="none">Kein Outro</option>
+          </select>
+          <label>Outro-Text</label>
+          <input name="outroText" defaultValue={video.outroText} />
+          <label>Outro-Dauer in Sekunden</label>
+          <input name="outroDuration" type="number" min="1" max="30" defaultValue={video.outroDuration} />
+          <label>Outro-Dateipfad optional</label>
+          <input name="outroAssetPath" placeholder="/uploads/outro.mp4 oder /generated/mein-outro.svg" defaultValue={video.outroAssetPath} />
+          <label className="check"><input name="lowerThirdEnabled" type="checkbox" defaultChecked={video.lowerThirdEnabled} /> Bauchbinde im Hauptvideo anzeigen</label>
+          <label>Bauchbinden-Text</label>
+          <input name="lowerThirdText" defaultValue={video.lowerThirdText} />
+          <label>Thumbnail-Stil</label>
+          <select name="thumbnailStyle" defaultValue={video.thumbnailStyle}>
+            <option value="editorial">Editorial</option>
+            <option value="breaking">Breaking News</option>
+            <option value="minimal">Minimal</option>
+          </select>
+          <label>Call-to-Action für Skripte</label>
+          <textarea name="callToAction" rows={3} defaultValue={video.callToAction} />
+          <h3>YouTube-Metadaten</h3>
+          <label>Titel-Vorlage</label>
+          <input name="youtubeTitleTemplate" defaultValue={video.youtubeTitleTemplate} />
+          <label>Beschreibung-Vorlage</label>
+          <textarea name="youtubeDescriptionTemplate" rows={4} defaultValue={video.youtubeDescriptionTemplate} />
+          <label>Tags</label>
+          <input name="youtubeTags" defaultValue={video.youtubeTags} />
+          <div className="form-split">
+            <div><label>Sichtbarkeit</label><select name="privacyStatus" defaultValue={video.privacyStatus}><option value="private">Privat</option><option value="unlisted">Nicht gelistet</option><option value="public">Öffentlich</option></select></div>
+            <div><label>Sprache</label><input name="language" defaultValue={video.language} /></div>
+          </div>
+          <button>Video-Einstellungen speichern</button>
         </form>
 
         <form action={applyCron}>

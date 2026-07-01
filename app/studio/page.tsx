@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { getAutomationSettings } from '@/lib/automation';
-import { sql } from '@/lib/db';
+import { getSettings, sql } from '@/lib/db';
+import { getVideoDimensions, normalizeVideoSettings } from '@/lib/video-settings';
 
 async function run(fd: FormData) {
   'use server';
@@ -18,6 +19,8 @@ async function run(fd: FormData) {
 
 export default function Studio() {
   const automation = getAutomationSettings();
+  const video = normalizeVideoSettings(getSettings() as any);
+  const dims = getVideoDimensions(video);
   const queued = (sql.prepare("select count(*) c from articles where status in ('new','scripted')").get() as any).c;
   const latest = sql.prepare('select id,title,status,updatedAt,videoPath from articles order by updatedAt desc limit 5').all() as any[];
   return (
@@ -37,12 +40,14 @@ export default function Studio() {
           <h2>Status</h2>
           <p><span className="badge">{automation.enabled ? 'aktiv' : 'inaktiv'}</span> alle {automation.intervalMinutes} Minuten · {automation.maxArticles} Artikel/Lauf</p>
           <p>{queued} Artikel warten auf Verarbeitung.</p>
-          <a href="/settings">Automation konfigurieren</a>
+          <p><strong>Video-Preset:</strong> {video.aspectRatio} · {video.resolution} · {dims.width}×{dims.height}</p>
+          <p>Intro: {video.introMode === 'none' ? 'aus' : video.introText} · Outro: {video.outroMode === 'none' ? 'aus' : video.outroText}</p>
+          <a href="/settings">Automation und Video konfigurieren</a>
         </div>
       </div>
       <h2>Letzte Aktivitäten</h2>
       <table><tbody>{latest.map((a) => <tr key={a.id}><td><a href={`/articles?q=${encodeURIComponent(a.title)}`}>{a.title}</a></td><td><span className="badge">{a.status}</span></td><td>{a.updatedAt}</td><td>{a.videoPath ? <a href={a.videoPath}>Video</a> : '—'}</td></tr>)}</tbody></table>
-      <div className="grid"><div className="card"><h3>1. Crawl</h3><p>RSS/HTML Quellen werden dedupliziert.</p></div><div className="card"><h3>2. KI Skript</h3><p>OpenRouter schreibt originellen deutschen Sprechertext.</p></div><div className="card"><h3>3. Audio & Bild</h3><p>ElevenLabs oder lokaler FFmpeg-Fallback; SVG-Bildgenerator ohne Binärdateien.</p></div><div className="card"><h3>4. Video & Upload</h3><p>FFmpeg rendert MP4, YouTube Upload-API ist als Integrationspunkt vorbereitet.</p></div></div>
+      <div className="grid"><div className="card"><h3>1. Crawl</h3><p>RSS/HTML Quellen werden dedupliziert.</p></div><div className="card"><h3>2. KI Skript</h3><p>OpenRouter schreibt originellen deutschen Sprechertext mit konfigurierbarem Call-to-Action.</p></div><div className="card"><h3>3. Audio & Bild</h3><p>ElevenLabs oder lokaler FFmpeg-Fallback; SVG-Bildgenerator ohne Binärdateien im gewählten Format.</p></div><div className="card"><h3>4. Video & Upload</h3><p>FFmpeg rendert MP4 inklusive Intro, Outro, Bauchbinde und YouTube-Metadaten-Preset.</p></div></div>
     </main>
   );
 }

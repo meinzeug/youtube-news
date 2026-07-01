@@ -7,8 +7,8 @@ Moderne Next.js-16-Webapp zur automatisierten Produktion von YouTube-News-Videos
 - OpenRouter-Integration für umformulierte deutsche Sprechertexte
 - ElevenLabs TTS plus lokaler FFmpeg-Fallback ohne externe API
 - Bild-/Thumbnail-Generierung als scriptbare SVG-Dateien
-- FFmpeg-Rendering zu MP4
-- Einstellungsseite für OpenRouter, ElevenLabs und YouTube-OAuth-Konfiguration
+- FFmpeg-Rendering zu MP4 mit konfigurierbaren Formaten, Intros, Outros und Bauchbinden
+- Einstellungsseite für OpenRouter, ElevenLabs, YouTube-OAuth und detaillierte Video-Presets
 - YouTube-Upload-Endpunkt als sauberer Integrationspunkt für Google OAuth/YouTube Data API
 
 ## Start
@@ -75,3 +75,15 @@ Der Cron ruft intern weiterhin den Workflow-Endpunkt `/api/workflow/run` auf. F�
 ### Bedienkomfort in der Oberfläche
 
 Die Einstellungsseite zeigt zusätzlich einen Live-Status für Benutzer- und Root-Crontab, den ausführenden Server-Benutzer, die sudo-Verfügbarkeit, den geplanten Cron-Befehl und den nächsten erwarteten Lauf. Derselbe Status ist maschinenlesbar über `GET /api/automation/cron` verfügbar; Änderungen und Cron-Installationen können weiterhin per `POST /api/automation/cron` ausgeführt werden.
+
+
+## Video-Presets
+
+Unter **Einstellungen → YouTube-Video Produktion** kann das Ausgabevideo ohne Codeänderung gesteuert werden:
+
+- Seitenverhältnis 16:9, 9:16 oder 1:1 sowie 720p/1080p
+- automatisch erzeugtes Intro und Outro per SVG/FFmpeg oder eigene Assets aus `public/`
+- Farben, Bauchbinde, Thumbnail-Stil und Call-to-Action für das KI-Skript
+- YouTube-Titel-, Beschreibungs-, Tags-, Sprache- und Sichtbarkeitsvorlagen
+
+Alle automatisch erzeugten Medien bleiben Laufzeit-Artefakte unter `public/generated/`; es werden keine Binärdateien eingecheckt.

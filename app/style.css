@@ -9,3 +9,4 @@ body{margin:0;background:#09090b;color:#fafafa;font-family:Inter,system-ui,Arial
 .progress-meter{height:10px;border-radius:999px;background:#27272a;overflow:hidden;margin:10px 0}.progress-meter span{display:block;height:100%;background:linear-gradient(90deg,#dc2626,#22c55e)}
 .inline-edit{padding:0;margin:12px 0 0;background:transparent;border:0;box-shadow:none}.inline-edit button{margin-top:12px}.source-card details form{display:block}
 .card-header{justify-content:space-between}.health-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:12px 0}.health-grid .badge{display:flex;justify-content:center;text-align:center}
+.form-split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-split input,.form-split select{margin-bottom:0}@media (max-width:720px){.form-split{grid-template-columns:1fr}}
