@@ -84,6 +84,16 @@ export async function shareYoutubeVideo(articleId: number, youtubeUrl: string) {
 }
 
 async function postToChannel(articleId: number, channel: SocialChannelDefinition, cfg: SocialChannelSettings, message: string, youtubeUrl: string) {
+  const { askOpenRouter } = await import('./ai');
+  const editorial = await askOpenRouter({
+    scenario: 'social',
+    system: `Du bist Social-Media-Redakteur. Formuliere den gelieferten Text für ${channel.name} um. Ziel ist ein ehrlicher, starker Einstieg, eine knappe Zusammenfassung und ein klarer Klick zum YouTube-Video. Keine erfundenen Fakten, kein Clickbait, keine neuen Behauptungen. Gib ausschließlich den fertigen Post aus.`,
+    prompt: message,
+    fallback: message,
+    maxTokens: 500,
+    temperature: 0.55,
+  });
+  message = editorial.content;
   const payload = { channel: channel.key, text: message, url: youtubeUrl, pageId: cfg.pageId || undefined };
   let status = 'prepared';
   let response = 'Kein Webhook/API-Endpunkt hinterlegt; Beitrag wurde zur manuellen Veröffentlichung vorbereitet.';

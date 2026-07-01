@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 import { getSettings, setSettings } from './db';
 
 export type AutomationSettings = {
@@ -6,6 +7,7 @@ export type AutomationSettings = {
   intervalMinutes: number;
   crawl: boolean;
   maxArticles: number;
+  campaignOnly: boolean;
   baseUrl: string;
   cronScope: 'user' | 'root';
   cronInstalledAt?: string;
@@ -28,6 +30,7 @@ const DEFAULTS: AutomationSettings = {
   intervalMinutes: 30,
   crawl: true,
   maxArticles: 3,
+  campaignOnly: false,
   baseUrl: 'http://localhost:3000',
   cronScope: 'user',
 };
@@ -44,6 +47,7 @@ export function getAutomationSettings(): AutomationSettings {
     intervalMinutes: Number(settings.automationIntervalMinutes || settings.intervalMinutes || DEFAULTS.intervalMinutes),
     crawl: settings.automationCrawl !== false,
     maxArticles: Number(settings.automationMaxArticles || settings.maxArticles || DEFAULTS.maxArticles),
+    campaignOnly: settings.automationCampaignOnly === true,
     baseUrl: String(settings.automationBaseUrl || settings.baseUrl || DEFAULTS.baseUrl),
     cronScope: scope,
     cronInstalledAt: String(settings.cronInstalledAt || ''),
@@ -62,6 +66,7 @@ export function saveAutomationSettings(input: Record<string, unknown>) {
     automationIntervalMinutes: interval,
     automationCrawl: input.crawl === 'on' || input.crawl === true || input.automationCrawl === true,
     automationMaxArticles: maxArticles,
+    automationCampaignOnly: input.campaignOnly === 'on' || input.campaignOnly === true || input.automationCampaignOnly === true,
     automationBaseUrl: baseUrl || DEFAULTS.baseUrl,
     automationCronScope: cronScope,
   });
@@ -69,9 +74,10 @@ export function saveAutomationSettings(input: Record<string, unknown>) {
 
 export function buildCronLine(settings = getAutomationSettings()) {
   const schedule = `*/${settings.intervalMinutes} * * * *`;
-  const payload = JSON.stringify({ crawl: settings.crawl, maxArticles: settings.maxArticles }).replace(/'/g, "'\\''");
+  const payload = JSON.stringify({ crawl: settings.crawl, maxArticles: settings.maxArticles, campaigns: true, campaignOnly: settings.campaignOnly }).replace(/'/g, "'\\''");
   const url = shellQuote(`${settings.baseUrl}/api/workflow/run`);
-  return `${schedule} curl -fsS -X POST ${url} -H 'content-type: application/json' -d '${payload}' >> /var/log/youtube-news-automation.log 2>&1 ${MARKER}`;
+  const logFile = shellQuote(path.join(process.cwd(), 'data', 'automation.log'));
+  return `${schedule} (curl -fsS -X POST ${url} -H 'content-type: application/json' -d '${payload}'; printf '\\n') >> ${logFile} 2>&1 ${MARKER}`;
 }
 
 export function nextRunHint(settings = getAutomationSettings(), now = new Date()) {

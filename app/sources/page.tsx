@@ -2,8 +2,9 @@ export const dynamic = 'force-dynamic';
 
 import { revalidatePath } from 'next/cache';
 import { sql, type Source } from '@/lib/db';
-import { discoverArticles, isSourceDue, nextCrawlAt } from '@/lib/news';
+import { discoverArticles, getLatestCrawlRun, isSourceDue, nextCrawlAt } from '@/lib/news';
 import { sourcePresets } from '@/lib/source-presets';
+import { getAutomationStatus } from '@/lib/automation';
 
 async function addSource(fd: FormData) {
   'use server';
@@ -67,6 +68,14 @@ async function crawlSingleSource(fd: FormData) {
   revalidatePath('/sources');
 }
 
+async function crawlAllDueSources() {
+  'use server';
+  const { crawlDueSourcesDetailed } = await import('@/lib/news');
+  await crawlDueSourcesDetailed();
+  revalidatePath('/sources');
+  revalidatePath('/');
+}
+
 type SourcesSearchParams = { q?: string; state?: string; previewUrl?: string };
 
 export default async function Sources({ searchParams }: { searchParams: Promise<SourcesSearchParams> }) {
@@ -98,6 +107,9 @@ export default async function Sources({ searchParams }: { searchParams: Promise<
   const latestBySource = new Map(sourceStats.map((row) => [row.sourceId, row.latest]));
   const activeCount = sources.filter((source) => source.active).length;
   const dueCount = sources.filter((source) => source.active && isSourceDue(source)).length;
+  const automation = await getAutomationStatus();
+  const latestCrawl = getLatestCrawlRun();
+  const crawlHistory = sql.prepare('select id,status,dueSources,succeededSources,failedSources,articlesImported,startedAt,completedAt from crawl_runs order by id desc limit 6').all() as { id: number; status: string; dueSources: number; succeededSources: number; failedSources: number; articlesImported: number; startedAt: string; completedAt: string | null }[];
   const articlesBySource = new Map<number, typeof latestArticles>();
   latestArticles.forEach((article) => {
     if (!article.sourceId) return;
@@ -111,6 +123,13 @@ export default async function Sources({ searchParams }: { searchParams: Promise<
   return (
     <main className="page">
       <div className="page-title"><div><p className="eyebrow">Quellenverwaltung</p><h1>Quellen</h1></div><span className="badge">{sources.length} Treffer · {activeCount} aktiv · {dueCount} fällig</span></div>
+      <section className="card crawl-operations">
+        <div className="card-header"><div><p className="eyebrow">Automatische Nachrichtensuche</p><h2>Crawler-Betrieb</h2></div><div className="automation-health"><span className={automation.enabled ? 'badge ok' : 'badge muted-badge'}>Automation {automation.enabled ? 'aktiv' : 'aus'}</span><span className={automation.userCrontabActive ? 'badge ok' : 'badge status-upload_failed'}>Cron {automation.userCrontabActive ? 'läuft' : 'fehlt'}</span></div></div>
+        <div className="crawl-kpis"><div><strong>{latestCrawl?.articlesImported || 0}</strong><span>zuletzt importiert</span></div><div><strong>{latestCrawl?.dueSources || 0}</strong><span>Quellen geprüft</span></div><div><strong>{latestCrawl?.failedSources || 0}</strong><span>Fehler</span></div><div><strong>{latestCrawl?.completedAt ? latestCrawl.completedAt.replace('T', ' ').slice(0, 19) : '—'}</strong><span>letzter Lauf UTC</span></div></div>
+        <p className="muted">Der lokale Cron prüft alle {automation.intervalMinutes} Minuten, welche aktiven Quellen ihr individuelles Intervall erreicht haben. Letzter Status: {latestCrawl?.status || 'noch kein protokollierter Lauf'}.</p>
+        <form action={crawlAllDueSources} className="inline-crawl-action"><button>Alle fälligen Quellen jetzt prüfen</button></form>
+        <details><summary>Letzte Crawl-Läufe</summary><div className="crawl-history">{crawlHistory.map((run) => <div key={run.id}><span>#{run.id} · {run.startedAt.replace('T', ' ').slice(0, 19)}</span><strong>{run.articlesImported} neu</strong><span>{run.succeededSources}/{run.dueSources} erfolgreich</span><span className={run.failedSources ? 'error-text' : ''}>{run.failedSources} Fehler</span></div>)}</div></details>
+      </section>
       <form className="toolbar sources-toolbar" action="/sources">
         <input name="q" placeholder="Quelle oder URL suchen" defaultValue={query} />
         <select name="state" defaultValue={selectedState} aria-label="Quellenstatus filtern">

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'; import { getSettings,setSettings } from '@/lib/db';
-const secretKeys = new Set(['openRouterKey','elevenLabsKey','youtubeClientSecret','youtubeAccessToken','youtubeRefreshToken','youtubeOAuthState']);
+const secretKeys = new Set(['openRouterKey','elevenLabsKey','youtubeClientSecret','youtubeAccessToken','youtubeRefreshToken','youtubeOAuthState','twitchClientSecret','twitchAccessToken','twitchRefreshToken','twitchOAuthState']);
 function redact(settings: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(settings).map(([key, value]) => [key, secretKeys.has(key) && value ? '*** gespeichert ***' : value]));
 }

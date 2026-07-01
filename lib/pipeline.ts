@@ -1,15 +1,17 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
 import * as cheerio from 'cheerio';
 import { sql, getSettings, type Article } from './db';
 import { getVideoDimensions, normalizeVideoSettings, type VideoSettings } from './video-settings';
 import { ensureSourceAttribution, sourceLabel as sourceLabelFromUrl } from './source-attribution';
+import { askOpenRouter } from './ai';
 
 const outDir = path.join(process.cwd(), 'public', 'generated');
 const userAgent = 'Mozilla/5.0 (compatible; YouTubeNewsStudio/1.0; +https://localhost)';
-const text2wavCli = createRequire(import.meta.url).resolve('text2wav');
+// Resolve at runtime from the deployment root. Bundlers otherwise rewrite require.resolve
+// to an internal "[externals]" pseudo path that cannot be executed as a Node script.
+const text2wavCli = path.join(process.cwd(), 'node_modules', 'text2wav', 'index.js');
 
 type VideoPlan = {
   script: string;
@@ -85,31 +87,16 @@ async function planVideo(article: Article, settings: Record<string, unknown>, vi
   };
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      signal: AbortSignal.timeout(20_000),
-      headers: {
-        Authorization: `Bearer ${settings.openRouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'YouTube News Automation',
-      },
-      body: JSON.stringify({
-        model: settings.openRouterTextModel || 'openai/gpt-4.1-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `Du bist ein deutschsprachiger YouTube-News-Produzent. Erstelle ein sendefertiges Videokonzept als JSON. Wir greifen Meldungen unabhängiger, alternativer und etablierter Medien auf, erstellen daraus aber eine eigenständige redaktionelle Fassung. Schreibe deshalb einen neuen Sprechertext mit eigener Struktur und Formulierung; kopiere weder Aufbau noch längere Passagen des Quelltexts und betreibe keine bloße Synonym-Ersetzung. Übernimm nur die belegten Sachinformationen. Ordne Behauptungen der Quelle transparent mit Formulierungen wie „laut ${sourceName}“ oder „wie ${sourceName} berichtet“ zu und erwecke nicht den Eindruck eigener Vor-Ort-Recherche. Kurze Zitate nur wenn unverzichtbar und klar als Zitat markiert. Die description muss eine eigenständige Zusammenfassung, eine faire Nennung von ${sourceName}, den vollständigen Originallink ${article.url} und einen freundlichen Hinweis enthalten, den Originalbeitrag für weitere Hintergründe zu besuchen. Behaupte keine Partnerschaft oder Zustimmung der Quelle. Nutze keine erfundenen Fakten. Stil: ${modeHints[videoSettings.aiScriptMode]}. Ton: ${videoSettings.aiTone}. Zielgruppe: ${videoSettings.aiAudience}. Zieldauer: ${videoSettings.aiTargetDuration} Sekunden. Hook gewünscht: ${videoSettings.aiIncludeHook ? 'ja' : 'nein'}. Kapitel gewünscht: ${videoSettings.aiIncludeChapters ? 'ja' : 'nein'}. Faktenregel: ${videoSettings.aiFactCheckPrompt}. CTA: ${videoSettings.callToAction}`,
-          },
-          { role: 'user', content: `Titel: ${article.title}\nQuelle-URL: ${article.url}\nRohtext: ${article.rawText}` },
-        ],
-        temperature: 0.55,
-        response_format: { type: 'json_schema', json_schema: { name: 'youtube_news_video_plan', strict: true, schema } },
-      }),
+    const result = await askOpenRouter({
+      scenario: 'drafting',
+      system: `Du bist ein deutschsprachiger YouTube-News-Produzent. Erstelle ein sendefertiges Videokonzept als JSON. Wir greifen Meldungen unabhängiger, alternativer und etablierter Medien auf, erstellen daraus aber eine eigenständige redaktionelle Fassung. Schreibe deshalb einen neuen Sprechertext mit eigener Struktur und Formulierung; kopiere weder Aufbau noch längere Passagen des Quelltexts und betreibe keine bloße Synonym-Ersetzung. Übernimm nur die belegten Sachinformationen. Ordne Behauptungen der Quelle transparent mit Formulierungen wie „laut ${sourceName}“ oder „wie ${sourceName} berichtet“ zu und erwecke nicht den Eindruck eigener Vor-Ort-Recherche. Kurze Zitate nur wenn unverzichtbar und klar als Zitat markiert. Die description muss eine eigenständige Zusammenfassung, eine faire Nennung von ${sourceName}, den vollständigen Originallink ${article.url} und einen freundlichen Hinweis enthalten, den Originalbeitrag für weitere Hintergründe zu besuchen. Behaupte keine Partnerschaft oder Zustimmung der Quelle. Nutze keine erfundenen Fakten. Stil: ${modeHints[videoSettings.aiScriptMode]}. Ton: ${videoSettings.aiTone}. Zielgruppe: ${videoSettings.aiAudience}. Zieldauer: ${videoSettings.aiTargetDuration} Sekunden. Hook gewünscht: ${videoSettings.aiIncludeHook ? 'ja' : 'nein'}. Kapitel gewünscht: ${videoSettings.aiIncludeChapters ? 'ja' : 'nein'}. Faktenregel: ${videoSettings.aiFactCheckPrompt}. CTA: ${videoSettings.callToAction}`,
+      prompt: `Titel: ${article.title}\nQuelle-URL: ${article.url}\nRohtext: ${article.rawText}`,
+      fallback: JSON.stringify(fallback),
+      temperature: 0.55,
+      maxTokens: 2600,
+      jsonSchema: schema,
     });
-    if (!response.ok) throw new Error(await response.text());
-    const json = await response.json() as { choices?: { message?: { content?: string } }[] };
-    const parsed = JSON.parse(json.choices?.[0]?.message?.content || '{}');
+    const parsed = JSON.parse(result.content || '{}');
     return {
       script: String(parsed.script || fallback.script),
       imagePrompt: `${videoSettings.thumbnailStyle} ${videoSettings.aiImagePromptStyle}: ${parsed.imagePrompt || article.title}`,
@@ -117,7 +104,7 @@ async function planVideo(article: Article, settings: Record<string, unknown>, vi
       description: ensureSourceAttribution(String(parsed.description || fallback.description), sourceName, article.url),
       chapters: Array.isArray(parsed.chapters) ? parsed.chapters.map(String) : fallback.chapters,
       lowerThird: String(parsed.lowerThird || fallback.lowerThird),
-      safetyNotes: Array.isArray(parsed.safetyNotes) ? parsed.safetyNotes.map(String) : [],
+      safetyNotes: Array.isArray(parsed.safetyNotes) ? parsed.safetyNotes.map(String) : (result.fallback ? fallback.safetyNotes : []),
     };
   } catch (error) {
     return {

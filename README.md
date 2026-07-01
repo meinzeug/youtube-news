@@ -1,6 +1,40 @@
-# YouTube News Studio
+# YouTube News Company OS
 
-Moderne Next.js-16-Webapp zur automatisierten Produktion von YouTube-News-Videos:
+Eine Next.js-16-Redaktions- und Markenplattform, in der der Benutzer als CEO ein virtuelles KI-Team führt. YouTube ist der zentrale Videokanal, Twitch der Live-Kanal, das eigene Webmagazin das dauerhafte Archiv und Social Media die Distribution.
+
+## Company OS
+
+- CEO-Cockpit mit Kennzahlen für News-Pipeline, Produktion, Redaktionsaufträge, KI-Budget und Kanäle
+- Virtuelles Redaktionsteam aus Chefredaktion, Newsdesk, Recherche, Video-Autor, Social/Growth und Standards/Fakten
+- Persistenter Mitarbeiter-Chat über OpenRouter mit lokaler, kostenfreier Fallback-Logik
+- KI-generiertes Kanban-Board, Redaktionskalender und kanalübergreifende Kampagnenplanung
+- Eigenes öffentliches Webmagazin mit KI-erstellten, eigenständigen Fassungen und transparenter Quellenverlinkung
+- Twitch OAuth Authorization Code Flow, automatische Token-Erneuerung, Kanalstatus, Titel/Kategorie/Tags und Live-Highlight-Marker
+- YouTube OAuth, Video-Pipeline und Social Distribution aus einer gemeinsamen Oberfläche
+
+### Ausführbare CEO-Aufträge
+
+Der Mitarbeiter-Chat ist kein reines Rollenspiel: Antworten dürfen laufende Arbeit nur melden, wenn eine Aktion tatsächlich gespeichert und ausgeführt wurde. Unterstützt werden persistente Redaktionsaufträge, Kalendertermine und wiederkehrende Videokampagnen. Aktive Kampagnen werden durch den lokalen Benutzer-Cron geprüft, reservieren fällige Läufe gegen Doppelverarbeitung und protokollieren Artikel, Video, Fehler und nächsten Termin im Kampagnenmonitor. Der Cron schreibt in `data/automation.log`; ein Benutzerprozess verwendet nicht `/var/log`.
+
+Automatische Veröffentlichung ist getrennt: Eine Kampagne produziert standardmäßig lokale Videos. Ein echter YouTube-Upload wird nur aktiviert, wenn der CEO ihn ausdrücklich freigibt und YouTube OAuth/API-Upload vollständig eingerichtet ist.
+
+## OpenRouter-Modellrouting und Kostenkontrolle
+
+Jede Aufgabe verwendet standardmäßig zuerst `openrouter/free`. Dieser offizielle Router wählt dynamisch ein verfügbares Gratis-Modell und filtert nach benötigten Funktionen wie Structured Output. Dadurch hängt die Software nicht an einem schnell veraltenden Free-Modellnamen.
+
+Die Ausfallkette lautet:
+
+1. Kostenloses OpenRouter-Modell
+2. Nur für ausdrücklich freigegebene kritische Szenarien ein günstiges Paid-Modell
+3. Deterministische lokale Verarbeitung ohne API-Kosten
+
+Standardmäßig können nur Strategie und Fakten-/Risikoprüfung nach einem echten Free-Ausfall Paid verwenden. Zusätzlich muss der konkrete Workflow die Anfrage als kritisch markieren, beispielsweise einen ausdrücklich bestätigten CEO-Auftrag oder eine bewusst gestartete Strategieplanung. Triage, Social, Skripte, Recherche und gewöhnliche Chats fallen kostenlos lokal zurück. Unter **Einstellungen → Dienste → OpenRouter** kann der CEO Free- und Paid-Modell sowie Paid-Berechtigung für jede Rolle getrennt steuern.
+
+Monatsbudget, Einzellimit und CEO-Freigabeschwelle werden vor jeder bezahlten Anfrage geprüft. Free- und Paid-Anfragen, tatsächliche Tokens und Kosten werden getrennt in SQLite protokolliert. OpenRouter begrenzt Gratis-Modelle abhängig vom Account; laut offizieller Dokumentation gelten typischerweise 50 Free-Anfragen pro Tag beziehungsweise 1000 pro Tag, wenn mindestens 10 USD Credits gekauft wurden. Das lokale Soft-Limit steht deshalb standardmäßig auf 45 und kann bei einem Account mit Credits erhöht werden; danach übernimmt der lokale Fallback ohne Kosten.
+
+Technische Referenzen: [OpenRouter API](https://openrouter.ai/docs/api/reference/overview), [OpenRouter Models API](https://openrouter.ai/api/v1/models), [Twitch Authentication](https://dev.twitch.tv/docs/authentication/), [Twitch Helix API](https://dev.twitch.tv/docs/api/reference/).
+
+## Bestehende Produktionsfunktionen
 
 - Quellenverwaltung für RSS-Feeds und HTML-Seiten inkl. Schnellstart-Presets, verbesserter Artikel-Erkennung über JSON-LD, typische News-Links und lesbare Crawl-Vorschau
 - Regelmäßiger Crawl per API oder `npm run worker`
@@ -46,6 +80,8 @@ Die folgenden Ansichten zeigen die Weboberfläche nach dem Start mit `npm run de
 ![Einstellungen mit Diensten, Video-Presets, Social-Media-Verteilung und Web-Automatisierung](docs/screenshots/settings.svg)
 
 ## Automatisierung
+
+Die automatische Nachrichtensuche wird über den Benutzer-Cron angestoßen. Er prüft im eingestellten Polling-Takt alle aktiven Quellen und crawlt nur Quellen, deren individuelles Intervall fällig ist. Eine kleine Zeittoleranz verhindert, dass ein Cron-Lauf knapp vor der Sekundengrenze eine Quelle bis zum nächsten Polling-Takt verschiebt. Jeder Lauf wird mit fälligen/erfolgreichen/fehlgeschlagenen Quellen und Anzahl neuer Artikel in `crawl_runs` gespeichert und unter **Quellen → Crawler-Betrieb** angezeigt. Bereits bekannte Artikel-URLs werden dedupliziert und zählen nicht als Neuimport.
 
 ```bash
 npm run worker
