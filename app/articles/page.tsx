@@ -33,6 +33,8 @@ type ArticleRow = {
   title: string;
   rawText: string;
   rewrittenText: string | null;
+  audioPath: string | null;
+  imagePath: string | null;
   videoPath: string | null;
   youtubeUrl: string | null;
   status: string;
@@ -45,6 +47,14 @@ async function resetArticle(fd: FormData) {
   const { sql } = await import('@/lib/db');
   sql.prepare("update articles set status='new', rewrittenText=null, imagePrompt=null, updatedAt=CURRENT_TIMESTAMP where id=?").run(Number(fd.get('id')));
   revalidatePath('/articles');
+}
+
+async function generateVideo(fd: FormData) {
+  'use server';
+  const { runPipeline } = await import('@/lib/pipeline');
+  await runPipeline(Number(fd.get('id')));
+  revalidatePath('/articles');
+  revalidatePath('/studio');
 }
 
 async function prepareUpload(fd: FormData) {
@@ -157,13 +167,14 @@ export default function Articles({ searchParams }: { searchParams?: { status?: s
                 <span className={`badge status-${article.status}`}>{statusLabels[article.status] || article.status}</span>
               </div>
               <p className="muted clamp">{article.rewrittenText || article.rawText}</p>
-              <details className="article-details"><summary>Produktionsdetails anzeigen</summary><dl><dt>Erstellt</dt><dd>{article.createdAt}</dd><dt>Quelle</dt><dd>{article.sourceName || 'Nicht zugeordnet'}</dd><dt>Status</dt><dd>{statusLabels[article.status] || article.status}</dd></dl></details>
+              <details className="article-details"><summary>Produktionsdetails anzeigen</summary><dl><dt>Erstellt</dt><dd>{article.createdAt}</dd><dt>Quelle</dt><dd>{article.sourceName || 'Nicht zugeordnet'}</dd><dt>Status</dt><dd>{statusLabels[article.status] || article.status}</dd><dt>Rohtext</dt><dd>{article.rawText.length} Zeichen</dd><dt>Skript</dt><dd>{article.rewrittenText ? `${article.rewrittenText.length} Zeichen` : 'noch nicht erzeugt'}</dd><dt>Assets</dt><dd>{[article.audioPath && 'Audio', article.imagePath && 'Bild', article.videoPath && 'Video'].filter(Boolean).join(', ') || 'keine'}</dd></dl></details>
               <div className="meta-row">
                 <a href={article.url} target="_blank" rel="noreferrer">Quelle öffnen</a>
                 {article.videoPath && <a href={article.videoPath}>Video ansehen</a>}
                 {article.youtubeUrl && <a href={article.youtubeUrl}>Upload-Link</a>}
               </div>
               <div className="action-row compact">
+                <form action={generateVideo}><input type="hidden" name="id" value={article.id} /><button>{article.videoPath ? 'Video neu erzeugen' : 'Video erzeugen'}</button></form>
                 {article.videoPath && <form action={prepareUpload}><input type="hidden" name="id" value={article.id} /><button>Upload vorbereiten</button></form>}
                 <form action={resetArticle}><input type="hidden" name="id" value={article.id} /><button className="secondary-button">Neu verarbeiten</button></form>
                 <form action={deleteArticle}><input type="hidden" name="id" value={article.id} /><button className="danger-button">Löschen</button></form>

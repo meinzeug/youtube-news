@@ -2,29 +2,36 @@ export const dynamic = 'force-dynamic';
 import { getAutomationSettings } from '@/lib/automation';
 import { sql } from '@/lib/db';
 
-async function run() {
+async function run(fd: FormData) {
   'use server';
   const { crawlDueSources } = await import('@/lib/news');
   const { runPipeline } = await import('@/lib/pipeline');
   const { sql } = await import('@/lib/db');
   const { getAutomationSettings } = await import('@/lib/automation');
   const automation = getAutomationSettings();
-  if (automation.crawl) await crawlDueSources();
-  const rows = sql.prepare("select id from articles where status in ('new','scripted') order by id desc limit ?").all(automation.maxArticles) as { id: number }[];
+  const maxArticles = Math.max(1, Math.min(20, Number(fd.get('maxArticles') || automation.maxArticles)));
+  const shouldCrawl = fd.get('crawl') === 'on';
+  if (shouldCrawl) await crawlDueSources();
+  const rows = sql.prepare("select id from articles where status in ('new','scripted') order by id desc limit ?").all(maxArticles) as { id: number }[];
   for (const row of rows) await runPipeline(row.id);
 }
 
 export default function Studio() {
   const automation = getAutomationSettings();
   const queued = (sql.prepare("select count(*) c from articles where status in ('new','scripted')").get() as any).c;
-  const latest = sql.prepare('select title,status,updatedAt from articles order by updatedAt desc limit 5').all() as any[];
+  const latest = sql.prepare('select id,title,status,updatedAt,videoPath from articles order by updatedAt desc limit 5').all() as any[];
   return (
     <main className="page">
       <h1>Automations-Studio</h1>
       <div className="grid two">
         <div className="card">
-          <p>Startet Crawl + Produktionspipeline mit den Web-Einstellungen.</p>
-          <form action={run}><button>Pipeline jetzt starten</button></form>
+          <p>Startet die Produktionspipeline direkt aus der Oberfläche. Die Standardwerte kommen aus den Automationseinstellungen.</p>
+          <form action={run}>
+            <label className="check"><input name="crawl" type="checkbox" defaultChecked={automation.crawl} /> Vorher fällige Quellen crawlen</label>
+            <label>Artikel in diesem Lauf</label>
+            <input name="maxArticles" type="number" min="1" max="20" defaultValue={automation.maxArticles} />
+            <button>Pipeline jetzt starten</button>
+          </form>
         </div>
         <div className="card">
           <h2>Status</h2>
@@ -34,7 +41,7 @@ export default function Studio() {
         </div>
       </div>
       <h2>Letzte Aktivitäten</h2>
-      <table><tbody>{latest.map((a) => <tr key={a.title}><td>{a.title}</td><td><span className="badge">{a.status}</span></td><td>{a.updatedAt}</td></tr>)}</tbody></table>
+      <table><tbody>{latest.map((a) => <tr key={a.id}><td><a href={`/articles?q=${encodeURIComponent(a.title)}`}>{a.title}</a></td><td><span className="badge">{a.status}</span></td><td>{a.updatedAt}</td><td>{a.videoPath ? <a href={a.videoPath}>Video</a> : '—'}</td></tr>)}</tbody></table>
       <div className="grid"><div className="card"><h3>1. Crawl</h3><p>RSS/HTML Quellen werden dedupliziert.</p></div><div className="card"><h3>2. KI Skript</h3><p>OpenRouter schreibt originellen deutschen Sprechertext.</p></div><div className="card"><h3>3. Audio & Bild</h3><p>ElevenLabs oder lokaler FFmpeg-Fallback; SVG-Bildgenerator ohne Binärdateien.</p></div><div className="card"><h3>4. Video & Upload</h3><p>FFmpeg rendert MP4, YouTube Upload-API ist als Integrationspunkt vorbereitet.</p></div></div>
     </main>
   );
