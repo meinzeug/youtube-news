@@ -12,4 +12,28 @@ export async function crawlSource(source: Source){
   return count;
 }
 async function crawlHtml(url:string){ const html=await fetch(url).then(r=>r.text()); const $=cheerio.load(html); return $('article a, h1 a, h2 a').slice(0,10).map((_,el)=>{const a=$(el); const href=new URL(a.attr('href')||url,url).toString(); return {url:href,title:a.text().trim()||href,rawText:a.closest('article').text().replace(/\s+/g,' ').trim().slice(0,4000)};}).get(); }
-export async function crawlDueSources(){ const sources=sql.prepare('select * from sources where active=1').all() as Source[]; let total=0; for(const s of sources) total += await crawlSource(s); return total; }
+
+export function isSourceDue(source: Pick<Source, 'lastCrawledAt' | 'intervalMinutes'>, now = new Date()) {
+  if (!source.lastCrawledAt) return true;
+  const last = new Date(source.lastCrawledAt).getTime();
+  if (Number.isNaN(last)) return true;
+  return now.getTime() - last >= Math.max(1, source.intervalMinutes) * 60_000;
+}
+
+export function nextCrawlAt(source: Pick<Source, 'lastCrawledAt' | 'intervalMinutes'>) {
+  if (!source.lastCrawledAt) return null;
+  const last = new Date(source.lastCrawledAt).getTime();
+  if (Number.isNaN(last)) return null;
+  return new Date(last + Math.max(1, source.intervalMinutes) * 60_000).toISOString();
+}
+
+export async function crawlDueSources(){
+  const sources=sql.prepare('select * from sources where active=1').all() as Source[];
+  let total=0;
+  const now = new Date();
+  for(const s of sources) {
+    if (isSourceDue(s, now)) total += await crawlSource(s);
+  }
+  return total;
+}
+
