@@ -1,5 +1,7 @@
 import { askOpenRouter, getAiPolicy, type AiScenario } from './ai';
-import { sql, type Article } from './db';
+import { getSettings, setSettings, sql, type Article } from './db';
+import { createCampaign, getCampaign } from './campaigns';
+import { installUserCron } from './automation';
 
 export const EDITORIAL_TEAM = [
   { key: 'chief', name: 'Mara', role: 'Chefredakteurin', department: 'Leitung', scenario: 'strategy' as AiScenario, mission: 'priorisiert Themen, schützt die Marke und übersetzt CEO-Ziele in klare Aufträge' },
@@ -25,15 +27,38 @@ export async function talkToEmployee(employeeKey: string, message: string) {
   const recent = sql.prepare('select author,role,content from editorial_messages order by id desc limit 10').all() as { author: string; role: string; content: string }[];
   const stats = getEditorialSnapshot();
   sql.prepare('insert into editorial_messages(author,role,content,createdAt) values(?,?,?,CURRENT_TIMESTAMP)').run('CEO', 'CEO', message);
-  const fallback = localEmployeeReply(employee, message, stats);
+  const deterministicActions = inferApprovedActions(message, recent);
+  const fallback = { reply: localEmployeeReply(employee, message, stats), actions: deterministicActions };
+  const actionSchema = {
+    type: 'object',
+    properties: {
+      reply: { type: 'string' },
+      actions: { type: 'array', maxItems: 8, items: { type: 'object', properties: {
+        type: { type: 'string', enum: ['create_campaign', 'create_task', 'create_calendar'] },
+        title: { type: ['string', 'null'] }, topic: { type: ['string', 'null'] }, description: { type: ['string', 'null'] },
+        cadenceMinutes: { type: ['integer', 'null'] }, assignee: { type: ['string', 'null'] }, channel: { type: ['string', 'null'] },
+        scheduledAt: { type: ['string', 'null'] }, autoUpload: { type: ['boolean', 'null'] },
+      }, required: ['type', 'title', 'topic', 'description', 'cadenceMinutes', 'assignee', 'channel', 'scheduledAt', 'autoUpload'], additionalProperties: false } },
+    }, required: ['reply', 'actions'], additionalProperties: false,
+  };
   const result = await askOpenRouter({
     scenario: employee.scenario,
-    system: `Du bist ${employee.name}, ${employee.role} bei der Medienmarke ${policy.brandName}. Deine Aufgabe: ${employee.mission}. Der Nutzer ist der CEO. Antworte auf Deutsch wie eine kompetente Führungskraft: direkt, konkret, mit Entscheidungen, Risiken und nächsten Schritten. Erfinde keine erledigten Arbeiten oder Fakten. Du darfst Aufgaben vorschlagen, aber kennzeichne Vorschläge. Markenmission: ${policy.mission}. Zielgruppe: ${policy.audience}. Aktueller Stand: ${JSON.stringify(stats)}.`,
+    system: `Du bist ${employee.name}, ${employee.role} bei der Medienmarke ${policy.brandName}. Deine Aufgabe: ${employee.mission}. Der Nutzer ist der CEO. Antworte als JSON. Du verfügst ausschließlich über drei echte Werkzeuge: create_campaign erzeugt wiederkehrende Video-Produktionsläufe, create_task legt einen internen Auftrag an, create_calendar plant einen Termin. Füge eine Aktion nur ein, wenn der CEO sie ausdrücklich beauftragt oder einen zuvor beschriebenen Plan eindeutig freigibt. Behaupte niemals, Freelancer, Menschen, externe Firmen oder andere nicht vorhandene Systeme beauftragt zu haben. Behaupte niemals, dass Arbeit läuft, wenn keine passende Aktion enthalten ist. Versprich keine späteren Berichte. Formuliere im reply geplante Aktionen im Futur; das System ergänzt nach Ausführung einen verifizierten Status. Automatischer YouTube-Upload darf nur bei explizitem Auftrag true sein; Videoerzeugung allein bedeutet false. Markenmission: ${policy.mission}. Zielgruppe: ${policy.audience}. Aktueller Stand: ${JSON.stringify(stats)}.`,
     prompt: `Letzte Unterhaltung:\n${recent.reverse().map((row) => `${row.author} (${row.role}): ${row.content}`).join('\n').slice(-8000)}\n\nNeue Nachricht des CEO: ${message}`,
-    fallback,
+    fallback: JSON.stringify(fallback),
+    jsonSchema: actionSchema,
+    maxTokens: 1400,
+    allowPaidFallback: deterministicActions.length > 0,
   });
-  sql.prepare('insert into editorial_messages(author,role,content,model,promptTokens,completionTokens,costUsd,createdAt) values(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)').run(employee.name, employee.role, result.content, result.model, result.promptTokens, result.completionTokens, result.costUsd);
-  return result;
+  let decision = fallback as { reply: string; actions: EmployeeAction[] };
+  try { decision = JSON.parse(result.content); } catch { /* deterministic fallback remains */ }
+  if (!decision.actions?.length && deterministicActions.length) decision.actions = deterministicActions;
+  const execution = await executeEmployeeActions(decision.actions || []);
+  const verifiedContent = execution.length
+    ? `${decision.reply}\n\nTatsächlich ausgeführt:\n${execution.map((line) => `- ${line}`).join('\n')}`
+    : `${decision.reply}\n\nStatus: Es wurde keine Systemaktion ausgeführt. Ohne Auftrag im Board, Kalender oder Kampagnenmonitor läuft keine Hintergrundarbeit.`;
+  sql.prepare('insert into editorial_messages(author,role,content,model,promptTokens,completionTokens,costUsd,createdAt) values(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)').run(employee.name, employee.role, verifiedContent, result.model, result.promptTokens, result.completionTokens, result.costUsd);
+  return { ...result, content: verifiedContent, actionsExecuted: execution };
 }
 
 export async function createEditorialPlan(goal: string) {
@@ -57,6 +82,7 @@ export async function createEditorialPlan(goal: string) {
     fallback: JSON.stringify(fallbackPlan),
     jsonSchema: schema,
     maxTokens: 1800,
+    allowPaidFallback: true,
   });
   let plan: typeof fallbackPlan;
   try { plan = JSON.parse(result.content); } catch { plan = fallbackPlan; }
@@ -127,8 +153,80 @@ export function getEditorialSnapshot() {
   };
 }
 
+type EmployeeAction = {
+  type: 'create_campaign' | 'create_task' | 'create_calendar';
+  title: string | null;
+  topic: string | null;
+  description: string | null;
+  cadenceMinutes: number | null;
+  assignee: string | null;
+  channel: string | null;
+  scheduledAt: string | null;
+  autoUpload: boolean | null;
+};
+
+async function executeEmployeeActions(actions: EmployeeAction[]) {
+  const executed: string[] = [];
+  let campaignCreated = false;
+  for (const action of actions.slice(0, 8)) {
+    if (action.type === 'create_campaign') {
+      const topic = String(action.topic || action.title || '').trim();
+      if (!topic) continue;
+      const campaignId = createCampaign({ name: String(action.title || `Videoreihe: ${topic}`), topic, instructions: String(action.description || ''), cadenceMinutes: Number(action.cadenceMinutes || 60), targetChannel: String(action.channel || 'YouTube'), autoUpload: action.autoUpload === true, startNow: true });
+      const campaign = getCampaign(campaignId);
+      executed.push(`Kampagne #${campaignId} „${campaign?.name || topic}“ ist aktiv; Takt ${campaign?.cadenceMinutes || 60} Minuten, nächster Lauf ${campaign?.nextRunAt || 'sofort'}, Auto-Upload ${campaign?.autoUpload ? 'aktiv' : 'aus'}.`);
+      campaignCreated = true;
+    } else if (action.type === 'create_task') {
+      const title = String(action.title || '').trim();
+      if (!title) continue;
+      const created = sql.prepare("insert into editorial_tasks(title,description,department,assignee,status,priority,createdBy) values(?,?,?,?,'backlog','normal','KI mit CEO-Freigabe')").run(title, String(action.description || ''), 'Redaktion', String(action.assignee || 'Nico'));
+      executed.push(`Redaktionsauftrag #${created.lastInsertRowid} „${title}“ wurde ${action.assignee || 'Nico'} zugewiesen.`);
+    } else if (action.type === 'create_calendar') {
+      const title = String(action.title || '').trim();
+      if (!title) continue;
+      const created = sql.prepare("insert into editorial_calendar(title,channel,contentType,status,scheduledAt,notes) values(?,?,?,'planned',?,?)").run(title, String(action.channel || 'YouTube'), 'Video', action.scheduledAt || null, String(action.description || ''));
+      executed.push(`Kalendertermin #${created.lastInsertRowid} „${title}“ wurde gespeichert.`);
+    }
+  }
+  if (campaignCreated) {
+    const settings = getSettings() as Record<string, unknown>;
+    setSettings({
+      automationEnabled: true,
+      automationIntervalMinutes: 5,
+      automationCrawl: true,
+      automationMaxArticles: 1,
+      automationCampaignOnly: true,
+      automationBaseUrl: String(settings.automationBaseUrl || 'http://localhost:3000'),
+      automationCronScope: 'user',
+    });
+    try {
+      const cron = await installUserCron();
+      executed.push(`${cron} Der Worker prüft alle fünf Minuten fällige Kampagnen.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Cron-Installation fehlgeschlagen.';
+      setSettings({ cronLastError: message });
+      executed.push(`Kampagne gespeichert, aber Hintergrund-Cron konnte nicht installiert werden: ${message}`);
+    }
+  }
+  return executed;
+}
+
+function inferApprovedActions(message: string, recent: { author: string; role: string; content: string }[]): EmployeeAction[] {
+  const approved = /\b(ok(?:ay)?\s*go|go|freigegeben|freigabe|start(?:e|en)?|setz(?:e|t)\s+(?:das\s+)?um|mach(?:en)?|los)\b/i.test(message);
+  const directOrder = /\b(starte|produziere|beauftrage|setz(?:e|t)\s+um)\b/i.test(message);
+  if (!approved && !directOrder) return [];
+  const context = [message, ...recent.filter((row) => row.author === 'CEO').map((row) => row.content).reverse()].join('\n');
+  const cadenceMatch = context.match(/(\d+)\s*(?:video|videos)\s*(?:pro|je)\s*stunde/i);
+  if (!cadenceMatch) return [];
+  const perHour = Math.max(1, Math.min(4, Number(cadenceMatch[1])));
+  const quoted = context.match(/[„"]([^„”"]{3,120})[”"]/);
+  const topicMatch = context.match(/thema\s+[„"]?([^\n,"”]{3,120})/i);
+  const topic = String(quoted?.[1] || topicMatch?.[1] || 'CEO-Themenkampagne').trim();
+  return [{ type: 'create_campaign', title: `Videoreihe: ${topic}`, topic, description: `CEO-Freigabe aus dem Redaktionschat. Eigenständige Beiträge mit Quellenprüfung und transparenter Attribution erzeugen.`, cadenceMinutes: Math.round(60 / perHour), assignee: 'Mara', channel: 'YouTube', scheduledAt: null, autoUpload: false }];
+}
+
 function localEmployeeReply(employee: typeof EDITORIAL_TEAM[number], message: string, stats: ReturnType<typeof getEditorialSnapshot>) {
-  return `${employee.name} · ${employee.role}\n\nIch habe den Auftrag „${message.slice(0, 240)}“ aufgenommen. Aktuell sehe ich ${stats.newArticles} neue Meldungen, ${stats.videosReady} fertige Videos und ${stats.scheduled} geplante Veröffentlichungen. Mein Vorschlag: Ziel und Deadline festlegen, relevante Quellen prüfen, daraus einen klar verantworteten Auftrag erstellen und die Veröffentlichung erst nach Qualitätskontrolle freigeben.`;
+  return `${employee.name} · ${employee.role}\n\nIch habe „${message.slice(0, 240)}“ geprüft. Aktuell sehe ich ${stats.newArticles} neue Meldungen, ${stats.videosReady} fertige Videos und ${stats.scheduled} geplante Veröffentlichungen. Ich melde ausschließlich die unten vom System bestätigten Aktionen als ausgeführt.`;
 }
 
 function buildLocalPlan(goal: string, articles: Pick<Article, 'id' | 'title' | 'url' | 'rawText'>[]) {

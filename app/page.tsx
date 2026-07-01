@@ -59,7 +59,7 @@ export default function Home() {
         <div className="card stat"><span>News-Pipeline</span><h2>{stats.articles.c}</h2><p>{stats.queued.c} warten · {stats.activeSources.c} Quellen aktiv</p></div>
         <div className="card stat"><span>Produktion</span><h2>{stats.ready.c}</h2><p>Videos bereit · {stats.uploaded.c} veröffentlicht</p></div>
         <div className="card stat"><span>Redaktion</span><h2>{Number(editorial.tasks.in_progress || 0)}</h2><p>in Arbeit · {Number(editorial.tasks.review || 0)} zur Freigabe</p></div>
-        <div className="card stat"><span>KI-Budget</span><h2>${aiSpend.totalUsd.toFixed(2)}</h2><div className="progress-meter"><span style={{ width: `${Math.min(100, aiSpend.totalUsd / company.monthlyBudgetUsd * 100)}%` }} /></div><p>von ${company.monthlyBudgetUsd.toFixed(2)} im {aiSpend.month}</p></div>
+        <div className="card stat"><span>KI-Budget</span><h2>${aiSpend.totalUsd.toFixed(2)}</h2><div className="progress-meter"><span style={{ width: `${Math.min(100, aiSpend.totalUsd / company.monthlyBudgetUsd * 100)}%` }} /></div><p>{aiSpend.dailyFreeRequests}/{company.freeDailyRequestLimit} Free heute · {aiSpend.paidRequests} Paid</p></div>
       </div>
 
       <div className="grid dashboard-grid">

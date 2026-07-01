@@ -49,6 +49,9 @@ async function persistServiceSettings(fd: FormData) {
     twitchClientSecret: nextTwitchClientSecret,
     twitchRedirectUri: nextTwitchRedirectUri,
     aiCompanyEnabled: fd.has('aiCompanyEnabled'),
+    aiFreeFirstEnabled: fd.has('aiFreeFirstEnabled'),
+    aiPaidFallbackEnabled: fd.has('aiPaidFallbackEnabled'),
+    aiFreeDailyRequestLimit: Math.max(1, Math.min(1000, Number(fd.get('aiFreeDailyRequestLimit') || 45))),
     aiMonthlyBudgetUsd: Math.max(0.1, Number(fd.get('aiMonthlyBudgetUsd') || 15)),
     aiPerRequestLimitUsd: Math.max(0.001, Number(fd.get('aiPerRequestLimitUsd') || 0.08)),
     aiApprovalThresholdUsd: Math.max(0.001, Number(fd.get('aiApprovalThresholdUsd') || 0.04)),
@@ -56,7 +59,11 @@ async function persistServiceSettings(fd: FormData) {
     brandMission: formText(fd, 'brandMission'),
     brandAudience: formText(fd, 'brandAudience'),
   };
-  for (const route of MODEL_ROUTES) next[`aiModel_${route.scenario}`] = formText(fd, `aiModel_${route.scenario}`) || route.model;
+  for (const route of MODEL_ROUTES) {
+    next[`aiFreeModel_${route.scenario}`] = formText(fd, `aiFreeModel_${route.scenario}`) || route.freeModel;
+    next[`aiModel_${route.scenario}`] = formText(fd, `aiModel_${route.scenario}`) || route.model;
+    next[`aiPaidFallback_${route.scenario}`] = fd.has(`aiPaidFallback_${route.scenario}`);
+  }
 
   if (youtubeCredentialsChanged) {
     Object.assign(next, {
@@ -226,14 +233,22 @@ export default async function Settings() {
               <div id="ai-company" className="oauth-checklist">
                 <strong>KI-Unternehmen & Kostenbremse</strong>
                 <label className="check"><input name="aiCompanyEnabled" type="checkbox" defaultChecked={s.aiCompanyEnabled !== false} /> KI-Mitarbeiter aktiv</label>
+                <label className="check"><input name="aiFreeFirstEnabled" type="checkbox" defaultChecked={s.aiFreeFirstEnabled !== false} /> Immer zuerst kostenlose OpenRouter-Modelle verwenden</label>
+                <label className="check"><input name="aiPaidFallbackEnabled" type="checkbox" defaultChecked={s.aiPaidFallbackEnabled !== false} /> Paid-Fallback grundsätzlich erlauben – nur für unten aktivierte Rollen</label>
+                <label>Free-Anfragen pro Tag maximal</label><input name="aiFreeDailyRequestLimit" type="number" min="1" max="1000" defaultValue={s.aiFreeDailyRequestLimit ?? 45} />
+                <p className="muted">Empfehlung: 45 ohne gekaufte Credits; bis 900 nach mindestens 10 USD OpenRouter-Credits. Nach dem Limit arbeitet die Software lokal weiter.</p>
                 <div className="form-split"><div><label>Monatsbudget (USD)</label><input name="aiMonthlyBudgetUsd" type="number" min="0.1" step="0.1" defaultValue={s.aiMonthlyBudgetUsd ?? 15} /></div><div><label>Max. pro Anfrage (USD)</label><input name="aiPerRequestLimitUsd" type="number" min="0.001" step="0.001" defaultValue={s.aiPerRequestLimitUsd ?? 0.08} /></div></div>
                 <label>Freigabeschwelle (USD)</label><input name="aiApprovalThresholdUsd" type="number" min="0.001" step="0.001" defaultValue={s.aiApprovalThresholdUsd ?? 0.04} />
                 <label>Markenname</label><input name="brandName" defaultValue={s.brandName || 'YouTube News'} />
                 <label>Mission</label><textarea name="brandMission" rows={3} defaultValue={s.brandMission || 'Unabhängige Nachrichten verständlich einordnen und als Video, Livestream und Artikel veröffentlichen.'} />
                 <label>Zielgruppe</label><textarea name="brandAudience" rows={2} defaultValue={s.brandAudience || 'Deutschsprachige Zuschauer, die schnelle Meldungen und nachvollziehbare Einordnung suchen.'} />
               </div>
-              <h4>Modelle nach Aufgabe</h4>
-              {MODEL_ROUTES.map((route) => <div className="model-setting" key={route.scenario}><label>{route.label}</label><input name={`aiModel_${route.scenario}`} defaultValue={s[`aiModel_${route.scenario}`] || route.model} /><small>{route.purpose} · Richtwert ${route.inputPerMillion}/M Input, ${route.outputPerMillion}/M Output</small></div>)}
+              <h4>Free-First-Routing nach Aufgabe</h4>
+              <p className="muted">Der Free Router filtert automatisch nach benötigten Fähigkeiten wie Structured Output. Paid benötigt zwei Freigaben: die Rollen-Checkbox und eine vom Workflow als kritisch markierte Anfrage. Sonst arbeitet das System bei Free-Ausfall lokal weiter.</p>
+              {MODEL_ROUTES.map((route) => {
+                const paidEnabled = s[`aiPaidFallback_${route.scenario}`] === undefined ? route.paidFallback : s[`aiPaidFallback_${route.scenario}`] === true;
+                return <div className="model-setting" key={route.scenario}><label>{route.label}</label><small>{route.purpose}</small><label>Kostenloses Primärmodell</label><input name={`aiFreeModel_${route.scenario}`} defaultValue={s[`aiFreeModel_${route.scenario}`] || route.freeModel} /><label className="check"><input name={`aiPaidFallback_${route.scenario}`} type="checkbox" defaultChecked={paidEnabled} /> Bei Free-Ausfall Paid-Fallback zulassen</label><label>Bezahltes Ausweichmodell</label><input name={`aiModel_${route.scenario}`} defaultValue={s[`aiModel_${route.scenario}`] || route.model} /><small>Nur falls aktiviert · Richtwert ${route.inputPerMillion}/M Input, ${route.outputPerMillion}/M Output</small></div>;
+              })}
             </section>
 
             <section className="service-panel elevenlabs-panel">
@@ -531,6 +546,7 @@ export default async function Settings() {
           </div>
           <label className="check"><input name="enabled" type="checkbox" defaultChecked={automation.enabled} /> Automatisierung aktiv</label>
           <label className="check"><input name="crawl" type="checkbox" defaultChecked={automation.crawl} /> Vor jedem Lauf Quellen crawlen</label>
+          <label className="check"><input name="campaignOnly" type="checkbox" defaultChecked={automation.campaignOnly} /> Nur fällige CEO-Kampagnen ausführen</label>
           <label>Intervall in Minuten</label>
           <input name="intervalMinutes" type="number" min="1" max="1440" defaultValue={automation.intervalMinutes} />
           <label>Max. Artikel pro Lauf</label>

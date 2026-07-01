@@ -4,8 +4,9 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { sql } from '@/lib/db';
 import { createEditorialPlan, EDITORIAL_TEAM, getEditorialSnapshot, publishArticleToMagazine, seedEditorialWorkspace, talkToEmployee } from '@/lib/editorial';
-import { getAiPolicy, getAiSpend, MODEL_ROUTES } from '@/lib/ai';
+import { getAiPolicy, getAiSpend, getModelRoute, MODEL_ROUTES } from '@/lib/ai';
 import { createTwitchMarker, getTwitchChannel, getTwitchStatus, updateTwitchChannel } from '@/lib/twitch';
+import { getAutomationStatus } from '@/lib/automation';
 
 async function chat(fd: FormData) {
   'use server';
@@ -62,7 +63,22 @@ async function markLive(fd: FormData) {
   revalidatePath('/redaktion');
 }
 
+async function runCampaignNow(fd: FormData) {
+  'use server';
+  const { runCampaign } = await import('@/lib/campaigns');
+  await runCampaign(Number(fd.get('campaignId')));
+  revalidatePath('/redaktion');
+}
+
+async function toggleCampaign(fd: FormData) {
+  'use server';
+  const status = fd.get('nextStatus') === 'active' ? 'active' : 'paused';
+  sql.prepare('update editorial_campaigns set status=?,updatedAt=CURRENT_TIMESTAMP where id=?').run(status, Number(fd.get('campaignId')));
+  revalidatePath('/redaktion');
+}
+
 type Task = { id: number; title: string; description: string; department: string; assignee: string; status: string; priority: string; dueAt: string | null; articleId: number | null };
+type Campaign = { id: number; name: string; topic: string; cadenceMinutes: number; status: string; targetChannel: string; autoUpload: number; nextRunAt: string | null; lastRunAt: string | null; lastResult: string | null };
 
 export default async function Redaktion() {
   seedEditorialWorkspace();
@@ -73,6 +89,10 @@ export default async function Redaktion() {
   const messages = sql.prepare('select * from editorial_messages order by id desc limit 14').all() as { id: number; author: string; role: string; content: string; model: string | null; costUsd: number; createdAt: string }[];
   const calendar = sql.prepare('select * from editorial_calendar order by scheduledAt is null, scheduledAt asc limit 20').all() as { id: number; title: string; channel: string; contentType: string; status: string; scheduledAt: string | null; notes: string }[];
   const articles = sql.prepare("select id,title,status,videoPath from articles order by updatedAt desc limit 12").all() as { id: number; title: string; status: string; videoPath: string | null }[];
+  const campaigns = sql.prepare('select * from editorial_campaigns order by status=\'active\' desc,updatedAt desc').all() as Campaign[];
+  const campaignRuns = sql.prepare('select r.*,a.title articleTitle from editorial_campaign_runs r left join articles a on a.id=r.articleId order by r.id desc limit 12').all() as { id: number; campaignId: number; articleId: number | null; articleTitle: string | null; status: string; videoPath: string | null; log: string | null; createdAt: string }[];
+  const automation = await getAutomationStatus();
+  const modelRoutes = MODEL_ROUTES.map((route) => getModelRoute(route.scenario));
   const twitchStatus = getTwitchStatus();
   const twitch = twitchStatus.connected ? await getTwitchChannel().catch(() => null) : null;
   const columns = [{ key: 'backlog', label: 'Auftragseingang' }, { key: 'in_progress', label: 'In Arbeit' }, { key: 'review', label: 'CEO / Qualitätsfreigabe' }, { key: 'done', label: 'Erledigt' }];
@@ -94,12 +114,19 @@ export default async function Redaktion() {
       <section className="card ai-governance">
         <p className="eyebrow">Kostenkontrolle</p><h2>KI-Modellrouting</h2>
         <div className="budget-bar"><span style={{ width: `${Math.min(100, spend.totalUsd / policy.monthlyBudgetUsd * 100)}%` }} /></div><p>${spend.totalUsd.toFixed(4)} von ${policy.monthlyBudgetUsd.toFixed(2)} Monatsbudget · {spend.promptTokens + spend.completionTokens} Tokens</p>
-        <div className="model-route-list">{MODEL_ROUTES.map((route) => <div key={route.scenario}><strong>{route.label}</strong><span>{route.model}</span><small>${route.inputPerMillion}/M rein · ${route.outputPerMillion}/M raus</small></div>)}</div>
+        <p className="free-first-summary"><strong>{spend.dailyFreeRequests}/{policy.freeDailyRequestLimit} Free heute</strong> · {spend.paidRequests} Paid im Monat</p>
+        <div className="model-route-list">{modelRoutes.map((route) => <div key={route.scenario}><strong>{route.label}</strong><span>Free: {route.freeModel}</span><small>{route.paidFallback ? `Paid nur bei Ausfall: ${route.model}` : 'Kein Paid-Fallback · lokal bei Free-Ausfall'}</small></div>)}</div>
         <a href="/settings#ai-company">Budgets und Modelle konfigurieren</a>
       </section>
     </div>
 
     <section className="card plan-generator"><div><p className="eyebrow">KI-Chefredaktion</p><h2>Aus einem CEO-Ziel einen Redaktionsplan erzeugen</h2><p className="muted">Erstellt verantwortete Aufgaben und einen kanalübergreifenden Kalender. Nichts wird ohne die vorhandenen Veröffentlichungsregeln blind publiziert.</p></div><form action={makePlan}><input name="goal" required placeholder="Ziel, Zeitraum, Schwerpunkt und gewünschte Kennzahl" /><button>Plan erstellen</button></form></section>
+
+    <section className="card campaign-monitor">
+      <div className="card-header"><div><p className="eyebrow">Verifizierte Hintergrundarbeit</p><h2>Kampagnenmonitor</h2></div><div className="automation-health"><span className={automation.enabled ? 'badge ok' : 'badge muted-badge'}>Automation {automation.enabled ? 'aktiv' : 'aus'}</span><span className={automation.userCrontabActive ? 'badge ok' : 'badge muted-badge'}>Cron {automation.userCrontabActive ? 'installiert' : 'fehlt'}</span></div></div>
+      {campaigns.length ? <div className="campaign-grid">{campaigns.map((campaign) => <article key={campaign.id}><div className="card-header"><strong>#{campaign.id} {campaign.name}</strong><span className={campaign.status === 'active' ? 'badge ok' : 'badge muted-badge'}>{campaign.status}</span></div><p>{campaign.topic}</p><dl><dt>Takt</dt><dd>{campaign.cadenceMinutes} Minuten</dd><dt>Nächster Lauf</dt><dd>{campaign.nextRunAt || 'nicht geplant'}</dd><dt>Letztes Ergebnis</dt><dd>{campaign.lastResult || 'noch kein Lauf'}</dd><dt>Upload</dt><dd>{campaign.autoUpload ? 'automatisch' : 'nur Video erzeugen'}</dd></dl><div className="campaign-actions"><form action={runCampaignNow}><input type="hidden" name="campaignId" value={campaign.id} /><button>Jetzt ausführen</button></form><form action={toggleCampaign}><input type="hidden" name="campaignId" value={campaign.id} /><input type="hidden" name="nextStatus" value={campaign.status === 'active' ? 'paused' : 'active'} /><button className="secondary-button">{campaign.status === 'active' ? 'Pausieren' : 'Aktivieren'}</button></form></div></article>)}</div> : <p className="muted">Keine aktive Kampagne. Erst eine im CEO-Chat bestätigte Aktion erzeugt Hintergrundarbeit.</p>}
+      <h3>Letzte echte Läufe</h3><div className="run-list">{campaignRuns.length ? campaignRuns.map((run) => <article key={run.id}><span className={`badge ${run.status === 'completed' ? 'ok' : run.status === 'failed' ? 'status-upload_failed' : ''}`}>{run.status}</span><div><strong>{run.articleTitle || `Kampagne #${run.campaignId}`}</strong><p>{run.log || run.createdAt}</p></div>{run.videoPath ? <a href={run.videoPath}>Video öffnen</a> : null}</article>) : <p className="muted">Noch kein Produktionslauf protokolliert.</p>}</div>
+    </section>
 
     <section><div className="section-heading"><div><p className="eyebrow">Workflow</p><h2>Redaktionsboard</h2></div><details><summary>Manuellen Auftrag anlegen</summary><form action={addTask} className="inline-task-form"><input name="title" required placeholder="Auftrag" /><textarea name="description" placeholder="Definition of Done" /><div className="form-split"><select name="assignee">{EDITORIAL_TEAM.map((person) => <option key={person.key}>{person.name}</option>)}</select><select name="priority"><option value="normal">Normal</option><option value="high">Hoch</option><option value="urgent">Dringend</option><option value="low">Niedrig</option></select></div><input name="department" placeholder="Abteilung" defaultValue="Redaktion" /><input name="dueAt" type="datetime-local" /><button>Auftrag anlegen</button></form></details></div>
       <div className="kanban">{columns.map((column) => <div className="kanban-column" key={column.key}><header><strong>{column.label}</strong><span>{tasks.filter((task) => task.status === column.key).length}</span></header>{tasks.filter((task) => task.status === column.key).map((task) => <article className={`task-card priority-${task.priority}`} key={task.id}><div className="task-meta"><span>{task.department}</span><span>{task.priority}</span></div><h3>{task.title}</h3><p>{task.description}</p><small>{task.assignee}{task.dueAt ? ` · ${task.dueAt.replace('T', ' ')}` : ''}</small><form action={moveTask}><input type="hidden" name="id" value={task.id} /><select name="status" defaultValue={task.status}>{columns.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select><button className="secondary-button">Verschieben</button></form></article>)}</div>)}</div>

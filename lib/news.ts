@@ -10,6 +10,19 @@ const parser = new Parser({
 });
 
 export type CrawledArticle = { url: string; title: string; rawText: string };
+export type CrawlRunReport = {
+  runId: number | null;
+  status: 'completed' | 'completed_with_errors' | 'skipped';
+  activeSources: number;
+  dueSources: number;
+  skippedSources: number;
+  succeededSources: number;
+  failedSources: number;
+  articlesImported: number;
+  startedAt: string;
+  completedAt: string;
+  results: { sourceId: number; name: string; status: 'ok' | 'failed'; imported: number; error?: string }[];
+};
 
 const knownFeedFallbacks: Record<string, string[]> = {
   'kontrafunk.radio': ['https://www.spreaker.com/show/5602119/episodes/feed'],
@@ -161,11 +174,11 @@ function cleanText(value: string) { return value.replace(/\s+/g, ' ').trim().sli
 function isLikelyArticle(url: string, title: string) { return title.length >= 12 && !/login|abo|newsletter|video|podcast|shop|datenschutz|impressum|kontakt|gewinnspiel/i.test(url); }
 function uniqueArticles(items: CrawledArticle[]) { const seen = new Set<string>(); return items.filter((item) => { if (seen.has(item.url)) return false; seen.add(item.url); return true; }); }
 
-export function isSourceDue(source: Pick<Source, 'lastCrawledAt' | 'intervalMinutes'>, now = new Date()) {
+export function isSourceDue(source: Pick<Source, 'lastCrawledAt' | 'intervalMinutes'>, now = new Date(), pollingToleranceMs = 5_000) {
   if (!source.lastCrawledAt) return true;
   const last = new Date(source.lastCrawledAt).getTime();
   if (Number.isNaN(last)) return true;
-  return now.getTime() - last >= Math.max(1, source.intervalMinutes) * 60_000;
+  return now.getTime() + Math.max(0, pollingToleranceMs) - last >= Math.max(1, source.intervalMinutes) * 60_000;
 }
 
 export function nextCrawlAt(source: Pick<Source, 'lastCrawledAt' | 'intervalMinutes'>) {
@@ -176,16 +189,40 @@ export function nextCrawlAt(source: Pick<Source, 'lastCrawledAt' | 'intervalMinu
 }
 
 export async function crawlDueSources() {
+  return (await crawlDueSourcesDetailed()).articlesImported;
+}
+
+export async function crawlDueSourcesDetailed(): Promise<CrawlRunReport> {
   const sources = sql.prepare('select * from sources where active=1').all() as Source[];
-  let total = 0;
   const now = new Date();
-  for (const s of sources) {
-    if (!isSourceDue(s, now)) continue;
+  const startedAt = now.toISOString();
+  const due = sources.filter((source) => isSourceDue(source, now));
+  const running = sql.prepare("select id from crawl_runs where status='running' and datetime(startedAt) > datetime('now','-20 minutes') order by id desc limit 1").get() as { id: number } | undefined;
+  if (running) return { runId: running.id, status: 'skipped', activeSources: sources.length, dueSources: due.length, skippedSources: sources.length, succeededSources: 0, failedSources: 0, articlesImported: 0, startedAt, completedAt: new Date().toISOString(), results: [] };
+
+  const created = sql.prepare("insert into crawl_runs(status,activeSources,dueSources,startedAt) values('running',?,?,?)").run(sources.length, due.length, startedAt);
+  const runId = Number(created.lastInsertRowid);
+  const results: CrawlRunReport['results'] = [];
+  let articlesImported = 0;
+  for (const source of due) {
     try {
-      total += await crawlSource(s);
-    } catch {
-      // Der Fehler wurde an der Quelle und im Jobprotokoll gespeichert. Andere Quellen laufen weiter.
+      const imported = await crawlSource(source);
+      articlesImported += imported;
+      results.push({ sourceId: source.id, name: source.name, status: 'ok', imported });
+    } catch (error) {
+      results.push({ sourceId: source.id, name: source.name, status: 'failed', imported: 0, error: error instanceof Error ? error.message : 'Unbekannter Crawl-Fehler' });
     }
   }
-  return total;
+  const failedSources = results.filter((result) => result.status === 'failed').length;
+  const succeededSources = results.length - failedSources;
+  const status = failedSources ? 'completed_with_errors' : 'completed';
+  const completedAt = new Date().toISOString();
+  sql.prepare('update crawl_runs set status=?,succeededSources=?,failedSources=?,articlesImported=?,log=?,completedAt=? where id=?').run(status, succeededSources, failedSources, articlesImported, JSON.stringify(results), completedAt, runId);
+  return { runId, status, activeSources: sources.length, dueSources: due.length, skippedSources: sources.length - due.length, succeededSources, failedSources, articlesImported, startedAt, completedAt, results };
+}
+
+export function getLatestCrawlRun() {
+  return sql.prepare('select * from crawl_runs order by id desc limit 1').get() as {
+    id: number; status: string; activeSources: number; dueSources: number; succeededSources: number; failedSources: number; articlesImported: number; log: string | null; startedAt: string; completedAt: string | null;
+  } | undefined;
 }

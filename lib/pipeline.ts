@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
 import * as cheerio from 'cheerio';
 import { sql, getSettings, type Article } from './db';
 import { getVideoDimensions, normalizeVideoSettings, type VideoSettings } from './video-settings';
@@ -10,7 +9,9 @@ import { askOpenRouter } from './ai';
 
 const outDir = path.join(process.cwd(), 'public', 'generated');
 const userAgent = 'Mozilla/5.0 (compatible; YouTubeNewsStudio/1.0; +https://localhost)';
-const text2wavCli = createRequire(import.meta.url).resolve('text2wav');
+// Resolve at runtime from the deployment root. Bundlers otherwise rewrite require.resolve
+// to an internal "[externals]" pseudo path that cannot be executed as a Node script.
+const text2wavCli = path.join(process.cwd(), 'node_modules', 'text2wav', 'index.js');
 
 type VideoPlan = {
   script: string;
